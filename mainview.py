@@ -14,6 +14,7 @@ class BaseComponet:
 	_anyFuncRe = re.compile("function (.*)?:")
 	_exitFuncRe = re.compile("end")
 	_returnFileRe = re.compile("return .*")
+	_instanceList = {}#每个组件的单例对象
 	def __init__(self,componetRuleName):
 		self.state = 1#状态机初始量 0代表退出匹配  1代表未进入匹配  其他代表该规则的匹配状态
 		self.ruleKeyList = []#原始的规则列表 从Component规则文件中直接解析出来
@@ -90,6 +91,12 @@ class BaseComponet:
 	def AddInsData(self,values):#存储实例的关键字信息
 		self.valuesList.append(values)
 
+	@staticmethod
+	def getInstance(componetRuleName):#Component对应规则文件名
+		if BaseComponet._instanceList.get(componetRuleName) is None:
+			BaseComponet._instanceList[componetRuleName] = BaseComponet(componetRuleName)
+		return BaseComponet._instanceList.get(componetRuleName)
+
 	#定位函数
 	@staticmethod
 	def seekFunc(line,funcNameRe):#定位函数 假设函数空格布局严谨,"end"匹配函数结束
@@ -146,7 +153,6 @@ class BaseComponet:
 
 	def initFileByTemplate(templateName,fd,replaceStr):
 		templatePath = os.path.join(os.getcwd(),"Template",templateName+".lua")
-		print("templatePath:",templatePath)
 		if not os.path.isfile(templatePath):
 			print("template file can't find ! path:",templatePath)
 			return
@@ -224,11 +230,12 @@ class BtnComponet(BaseComponet):
 
 class RuleFile:
 	# RootPath = "D:\\MMOFPS\\NZEditor-Dev\\NZMobile\\Plugins\\UnrealLua\\LuaSource\\frontend"
-	RootPath = "M:\\PythonSpaces\\ProjectRoot"
+	RootPath = "Y:\\WorkSpaces\\PythonSpaces\\PythonTools\\ProjectRoot"
 
 	def __init__(self,filePath):
 		self.filePath = filePath#相对路径
 		self.keyDic = {}#规则字典
+		self.componetInsList = {}#组件实例字典
 		self.absPath = os.path.join(os.getcwd(),filePath)
 		if not os.path.isfile(self.absPath):
 			print("rule path is error! path:",absPath)
@@ -273,6 +280,17 @@ class RuleFile:
 			self.ModelFolder=self.ModelFolder.replace("xxx",self.ModelNameMatch.lower())
 		print(self.ModelTemplate,self.ModelNameMatch,self.ModelFileName,self.ModelFolder)
 
+	def initComponents(self):
+		for key in self.keyDic:
+			if key != "ModelName":
+				componetInstances = self.keyDic[key]
+				componet = BaseComponet.getInstance(key)
+				componetInstanceList = componetInstances.split(",")#组件实例列表
+				for KeyValues in componetInstanceList:#组件实例 关键字组合
+					valueList = KeyValues.split(":")#拆分成关键字列表
+					componet.AddInsData(valueList)
+				if self.componetInsList.get(key) is None:
+					self.componetInsList[key] = componet
 
 	def initBtnComponent(self):
 		ruleValues = self.keyDic["Btn"]
@@ -294,31 +312,36 @@ class RuleFile:
 
 		return btnComponet
 
-	def run(self,btnComponet):
+	def runComponent(self,componetIns):
 		folderPath = os.path.join(RuleFile.RootPath,self.ModelFolder)
 		if not os.path.exists(folderPath) :
 			os.mkdir(folderPath)
 		modelFilePath = os.path.join(folderPath,self.ModelFileName+".lua")
 		modelTempFilePath = os.path.join(folderPath,self.ModelFileName+"_temp.lua")
-		# if os.path.exists(modelFilePath):
-		with open(modelFilePath,mode="w+",encoding="utf-8",errors="ignore") as f:
-			RuleFile.InitFileByTemplate(self.ModelTemplate,f,self.ModelNameMatch)
+		if not os.path.exists(modelFilePath):
+			with open(modelFilePath,mode="w+",encoding="utf-8",errors="ignore") as f:
+				RuleFile.InitFileByTemplate(self.ModelTemplate,f,self.ModelNameMatch)
 
 		# 开始针对已生成文件进行代码插入
-		print("modelTempFilePath:",modelTempFilePath)
 		with open(modelTempFilePath,mode="w",encoding="utf-8",errors="ignore") as tempFd:
 			with open(modelFilePath,mode="r",encoding="utf-8",errors="ignore") as f:
 				for line in f:
-					btnComponet.RunAndWrite(line,tempFd)#先写入插入内容
+					componetIns.RunAndWrite(line,tempFd)#先写入插入内容
 					tempFd.write(line)
 		# os.rename(modelTempFilePath,modelTempFilePath+"1")
+		# 
+	def run(self):
+		for key in self.componetInsList:
+			self.runComponent(self.componetInsList[key])
 
 def main(*args,**kwargs):
 	ruleFile = RuleFile("Rule.txt")
 	ruleFile.initRules()
 	ruleFile.initModel()
-	btnComponet = ruleFile.initBtnComponent()
-	ruleFile.run(btnComponet)
+	ruleFile.initComponents()
+	ruleFile.run()
+	# btnComponet = ruleFile.initBtnComponent()
+	# ruleFile.run(btnComponet)
 	# while True:
 	# 	a = input("任意字符继续:")
 	# 	if a == "":
@@ -330,9 +353,6 @@ def test():
 	btnComponet = BtnComponet.getInstance()
 	print("btnComponet.ruleList:\n",btnComponet.ruleList)
 	print("btnComponet.codeList:\n",btnComponet.codeList)
-
-	# for i in range(0,5):
-	# 	print(i)
 	pass
 
 def ListToDic(list):

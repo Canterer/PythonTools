@@ -28,4 +28,8 @@ function XXXMainView:OnTestBtnClicked()
 	-- body
 end
 
+function XXXMainView:UpdateTestList()
+	-- body
+end
+
 return XXXMainView
