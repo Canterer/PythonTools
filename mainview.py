@@ -283,9 +283,10 @@ class RuleFile:
 	def initComponents(self):
 		for key in self.keyDic:
 			if key != "ModelName":
-				componetInstances = self.keyDic[key]
+				value = self.keyDic[key]
 				componet = BaseComponet.getInstance(key)
-				componetInstanceList = componetInstances.split(",")#组件实例列表
+				value = value.replace(",...",'')#去除省略号
+				componetInstanceList = value.split(",")#组件实例列表
 				for KeyValues in componetInstanceList:#组件实例 关键字组合
 					valueList = KeyValues.split(":")#拆分成关键字列表
 					componet.AddInsData(valueList)
@@ -294,7 +295,7 @@ class RuleFile:
 
 	def initBtnComponent(self):
 		ruleValues = self.keyDic["Btn"]
-		# ruleValues = ruleValues.replace("...",'')#去除省略号
+		# ruleValues = ruleValues.replace("...",'')
 		btnValues = ruleValues.split(",")
 		# print("btnValues:",btnValues)
 		btnList = []
@@ -334,6 +335,19 @@ class RuleFile:
 		for key in self.componetInsList:
 			self.runComponent(self.componetInsList[key])
 
+	def runCommand(self,command):
+		group = command.partition(":")#拆分规则
+		key = group[0]
+		value = group[2][1:-1]#去除前后"[""]"
+		componet = BaseComponet.getInstance(key)
+		value = value.replace(",...",'')#去除省略号
+		componetInstanceList = value.split(",")#组件实例列表
+		for KeyValues in componetInstanceList:#组件实例 关键字组合
+			valueList = KeyValues.split(":")#拆分成关键字列表
+			componet.AddInsData(valueList)
+		self.runComponent(componet)
+
+
 def main(*args,**kwargs):
 	ruleFile = RuleFile("Rule.txt")
 	ruleFile.initRules()
@@ -342,17 +356,19 @@ def main(*args,**kwargs):
 	ruleFile.run()
 	# btnComponet = ruleFile.initBtnComponent()
 	# ruleFile.run(btnComponet)
-	# while True:
-	# 	a = input("任意字符继续:")
-	# 	if a == "":
-	# 		break
-	# 	else:
-	# 		ruleFile.run()
+	commandRe = re.compile("(.*)?:\[(.*)\]")
+	while True:
+		command = input("run command or 空字符退出:")
+		if command == "":
+			break
+		elif commandRe.match(command) is None:
+			print("command is not right style: xx:[x:y,...]")
+		else:
+			ruleFile.runCommand(command)
 
 def test():
-	btnComponet = BtnComponet.getInstance()
-	print("btnComponet.ruleList:\n",btnComponet.ruleList)
-	print("btnComponet.codeList:\n",btnComponet.codeList)
+	# commandRe = re.compile("(.*)?:\[(.*)\]")
+	# print(commandRe.search("Btn:[left:LeftBtn:Left]"))
 	pass
 
 def ListToDic(list):
@@ -365,4 +381,5 @@ def ListToDic(list):
 if __name__ == '__main__':
 	argsDic = ListToDic(sys.argv[1:])
 	main(**argsDic)
+	# test()
 	# test()
