@@ -91,6 +91,12 @@ class BaseComponet:
 	def AddInsData(self,values):#存储实例的关键字信息
 		self.valuesList.append(values)
 
+	def ResetComponent(self):
+		for index in self.ruleFlagList:
+			self.ruleFlagList[index] = False#清除规则匹配记录
+		self.valuesList = []#清除实例信息
+
+
 	@staticmethod
 	def getInstance(componetRuleName):#Component对应规则文件名
 		if BaseComponet._instanceList.get(componetRuleName) is None:
@@ -217,17 +223,6 @@ class BaseComponet:
 	# def GetReByIndex(self,index):
 	# 	return self.reList[index]
 
-class BtnComponet(BaseComponet):
-	__ins__ = None
-	@staticmethod
-	def getInstance():
-		if BtnComponet.__ins__ is None:
-			BtnComponet.__ins__ = BtnComponet("btn")#Component对应规则文件名
-		return BtnComponet.__ins__
-
-	def __init__(self,componetRuleName):
-		BaseComponet.__init__(self,componetRuleName)
-
 class RuleFile:
 	# RootPath = "D:\\MMOFPS\\NZEditor-Dev\\NZMobile\\Plugins\\UnrealLua\\LuaSource\\frontend"
 	RootPath = "Y:\\WorkSpaces\\PythonSpaces\\PythonTools\\ProjectRoot"
@@ -293,26 +288,6 @@ class RuleFile:
 				if self.componetInsList.get(key) is None:
 					self.componetInsList[key] = componet
 
-	def initBtnComponent(self):
-		ruleValues = self.keyDic["Btn"]
-		# ruleValues = ruleValues.replace("...",'')
-		btnValues = ruleValues.split(",")
-		# print("btnValues:",btnValues)
-		btnList = []
-		for btnValue in btnValues:
-			btnValue = btnValue.split(":")
-			if len(btnValue) == 1:
-				continue#"..." 去除省略号
-			if len(btnValue) == 2:
-				btnValue.append(btnValue[0][:1].upper()+btnValue[0][1:])
-			btnList.append(btnValue)
-
-		btnComponet = BtnComponet.getInstance()
-		for values in btnList:
-			btnComponet.AddInsData(values)
-
-		return btnComponet
-
 	def runComponent(self,componetIns):
 		folderPath = os.path.join(RuleFile.RootPath,self.ModelFolder)
 		if not os.path.exists(folderPath) :
@@ -329,8 +304,9 @@ class RuleFile:
 				for line in f:
 					componetIns.RunAndWrite(line,tempFd)#先写入插入内容
 					tempFd.write(line)
-		# os.rename(modelTempFilePath,modelTempFilePath+"1")
-		# 
+		os.remove(modelFilePath)
+		os.rename(modelTempFilePath,modelFilePath)
+
 	def run(self):
 		for key in self.componetInsList:
 			self.runComponent(self.componetInsList[key])
@@ -340,6 +316,7 @@ class RuleFile:
 		key = group[0]
 		value = group[2][1:-1]#去除前后"[""]"
 		componet = BaseComponet.getInstance(key)
+		componet.ResetComponent()
 		value = value.replace(",...",'')#去除省略号
 		componetInstanceList = value.split(",")#组件实例列表
 		for KeyValues in componetInstanceList:#组件实例 关键字组合
@@ -347,15 +324,12 @@ class RuleFile:
 			componet.AddInsData(valueList)
 		self.runComponent(componet)
 
-
 def main(*args,**kwargs):
 	ruleFile = RuleFile("Rule.txt")
 	ruleFile.initRules()
 	ruleFile.initModel()
 	ruleFile.initComponents()
 	ruleFile.run()
-	# btnComponet = ruleFile.initBtnComponent()
-	# ruleFile.run(btnComponet)
 	commandRe = re.compile("(.*)?:\[(.*)\]")
 	while True:
 		command = input("run command or 空字符退出:")
@@ -365,11 +339,6 @@ def main(*args,**kwargs):
 			print("command is not right style: xx:[x:y,...]")
 		else:
 			ruleFile.runCommand(command)
-
-def test():
-	# commandRe = re.compile("(.*)?:\[(.*)\]")
-	# print(commandRe.search("Btn:[left:LeftBtn:Left]"))
-	pass
 
 def ListToDic(list):
 	count = len(list)
@@ -381,5 +350,3 @@ def ListToDic(list):
 if __name__ == '__main__':
 	argsDic = ListToDic(sys.argv[1:])
 	main(**argsDic)
-	# test()
-	# test()
