@@ -9,12 +9,14 @@ import re
 		插入特定函数后固定代码(新增函数)
 		写入特定模板(新增文件)
 '''
-class BaseComponet:
+class BaseComponent:
 	#以下Re使用match匹配字符串开头
 	_anyFuncRe = re.compile("function (.*)?:")
 	_exitFuncRe = re.compile("end")
 	_returnFileRe = re.compile("return .*")
 	_instanceList = {}#每个组件的单例对象
+
+	_componetMatchlist = {}#各组件匹配的关键字列表
 	def __init__(self,componetRuleName):
 		self.state = 1#状态机初始量 0代表退出匹配  1代表未进入匹配  其他代表该规则的匹配状态
 		self.ruleKeyList = []#原始的规则列表 从Component规则文件中直接解析出来
@@ -25,6 +27,7 @@ class BaseComponet:
 
 		self.runningRule = None#正在匹配中的规则
 		self.ruleFlagList = {}#记录规则是否匹配过 存储序号
+		self.componetRuleName = componetRuleName
 		self.initComponetFile(componetRuleName)
 		self.initRuleList()
 
@@ -96,12 +99,11 @@ class BaseComponet:
 			self.ruleFlagList[index] = False#清除规则匹配记录
 		self.valuesList = []#清除实例信息
 
-
 	@staticmethod
 	def getInstance(componetRuleName):#Component对应规则文件名
-		if BaseComponet._instanceList.get(componetRuleName) is None:
-			BaseComponet._instanceList[componetRuleName] = BaseComponet(componetRuleName)
-		return BaseComponet._instanceList.get(componetRuleName)
+		if BaseComponent._instanceList.get(componetRuleName) is None:
+			BaseComponent._instanceList[componetRuleName] = BaseComponent(componetRuleName)
+		return BaseComponent._instanceList.get(componetRuleName)
 
 	#定位函数
 	@staticmethod
@@ -119,23 +121,41 @@ class BaseComponet:
 		else:
 			return False
 
+	@staticmethod
+	def RecordMatch(componetRuleName, key):
+		keyDic = BaseComponent._componetMatchlist.get(componetRuleName, {})
+		keyDic[key] = True
+		BaseComponent._componetMatchlist[componetRuleName] = keyDic
+		# print("RecordMatch",componetRuleName,keyDic,key)
+
+	@staticmethod
+	def IsHasMatch(componetRuleName, key):
+		keyDic = BaseComponent._componetMatchlist.get(componetRuleName, {})
+		return keyDic.get(key) == True
+
+	def RecordComponentInsertKey(self):
+		for values in self.valuesList:
+			BaseComponent.RecordMatch(self.componetRuleName, values[0])
+
 	#插入函数
 	def insertFunc(self,line,funcNameRe):
 		if self.state == 0:#退出该规则匹配
 			return
 		if self.state == 1:#匹配同类函数
 			if self.seekFunc(line,funcNameRe):
+				# print("find Func",funcNameRe.match(line).group(2))
+				BaseComponent.RecordMatch(self.componetRuleName, funcNameRe.match(line).group(2))
 				self.state = 2
 		elif self.state == 2:#匹配退出函数
-			if self.seekFunc(line,BaseComponet._exitFuncRe):
+			if self.seekFunc(line,BaseComponent._exitFuncRe):
 				self.state = 3
 		elif self.state == 3:#寻找插入时机
-			if self.seekFunc(line,BaseComponet._anyFuncRe):#匹配到任何函数
+			if self.seekFunc(line,BaseComponent._anyFuncRe):#匹配到任何函数
 				if self.seekFunc(line,funcNameRe):
 					self.state = 2#再次匹配同类函数
 				else:
 					self.state = 0#匹配到非同类函数 准备插入
-			elif self.seekCode(line,BaseComponet._returnFileRe):#匹配到文件退出 return XXX
+			elif self.seekCode(line,BaseComponent._returnFileRe):#匹配到文件退出 return XXX
 				self.state = 0
 
 	#插入代码
@@ -146,10 +166,12 @@ class BaseComponet:
 			if self.seekFunc(line,funcNameRe):
 				self.state = 2
 		elif self.state == 2:
-			if self.seekFunc(line,BaseComponet._exitFuncRe):#匹配到退出函数 无同类Code
+			if self.seekFunc(line,BaseComponent._exitFuncRe):#匹配到退出函数 无同类Code
 				self.state = 0
 			else:
 				if self.seekCode(line,codeRe):#匹配到同类Code
+					# print("find code",codeRe.match(line).group(1))
+					BaseComponent.RecordMatch(self.componetRuleName, codeRe.match(line).group(1))
 					self.state = 3
 				else:
 					self.state = 2
@@ -193,7 +215,8 @@ class BaseComponet:
 		self.CheckLine(line)
 		if self.state == 0:
 			for values in self.valuesList:#某种component的实例数据列表
-				fb.write(self.GetInsertLine(values))
+				if not BaseComponent.IsHasMatch(self.componetRuleName, values[0]):
+					fb.write(self.GetInsertLine(values))				
 			self.NextState()
 
 	def GetRunningRule():
@@ -279,7 +302,7 @@ class RuleFile:
 		for key in self.keyDic:
 			if key != "ModelName":
 				value = self.keyDic[key]
-				componet = BaseComponet.getInstance(key)
+				componet = BaseComponent.getInstance(key)
 				value = value.replace(",...",'')#去除省略号
 				componetInstanceList = value.split(",")#组件实例列表
 				for KeyValues in componetInstanceList:#组件实例 关键字组合
@@ -304,6 +327,9 @@ class RuleFile:
 				for line in f:
 					componetIns.RunAndWrite(line,tempFd)#先写入插入内容
 					tempFd.write(line)
+				componetIns.RecordComponentInsertKey()#记录写入的关键字 防止重复写入
+				componetIns.ResetComponent()#清空组件已写入的关键字
+
 		os.remove(modelFilePath)
 		os.rename(modelTempFilePath,modelFilePath)
 
@@ -315,7 +341,7 @@ class RuleFile:
 		group = command.partition(":")#拆分规则
 		key = group[0]
 		value = group[2][1:-1]#去除前后"[""]"
-		componet = BaseComponet.getInstance(key)
+		componet = BaseComponent.getInstance(key)
 		componet.ResetComponent()
 		value = value.replace(",...",'')#去除省略号
 		componetInstanceList = value.split(",")#组件实例列表
@@ -349,4 +375,4 @@ def ListToDic(list):
 
 if __name__ == '__main__':
 	argsDic = ListToDic(sys.argv[1:])
-	main(**argsDic)
+	main(**argsDic)   
