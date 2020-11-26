@@ -1,0 +1,5 @@
+{
+	"Range":["min","max"],//返回Range(min,max)的列表
+	"Number":["n"],	
+
+}
