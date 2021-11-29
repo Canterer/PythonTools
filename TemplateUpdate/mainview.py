@@ -152,6 +152,7 @@ class BaseComponent:
 		elif self.state == 3:#寻找插入时机
 			if self.seekFunc(line,BaseComponent._anyFuncRe):#匹配到任何函数
 				if self.seekFunc(line,funcNameRe):
+					BaseComponent.RecordMatch(self.componetRuleName, funcNameRe.match(line).group(2))
 					self.state = 2#再次匹配同类函数
 				else:
 					self.state = 0#匹配到非同类函数 准备插入
@@ -178,6 +179,8 @@ class BaseComponent:
 		elif self.state == 3:#匹配非同类Code(包含函数退出)
 			if not self.seekCode(line,codeRe):
 				self.state = 0
+			else:#匹配到同类Code 
+				BaseComponent.RecordMatch(self.componetRuleName, codeRe.match(line).group(1))
 
 	def initFileByTemplate(templateName,fd,replaceStr):
 		templatePath = os.path.join(os.getcwd(),"Template",templateName+".lua")

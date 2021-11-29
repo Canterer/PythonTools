@@ -11,6 +11,27 @@ For:["initSequeue","conditionSequeue"，"deltaSequeue","loopSequeue"]
 '''
 _LocalValueDic = {}# 局部变量字典
 _GlobalValueDic = {}# 全局变量字典
+
+class BaseNode:
+	instanceIndex = 0
+	instanceDic = {}
+	def __init__(self, nodeName, instanceName=None)
+		self.nodeName = nodeName#对应节点的类型
+		self.instanceName = instanceName
+
+
+
+		self.argsNum = 0#最大参数个数
+		self.argsDic = {}
+		self.argDefaultDic = {}
+		self.moveStep = 0#前进步数 对应消耗的实参个数
+
+	def getArgsNum(self):
+		return self.argsNum
+
+	def getMoveStep(self):
+		return self.moveStep
+
 class NodeLink:
 	"""链接每个逻辑节点"""
 	def __init__(self, arg):
@@ -19,12 +40,10 @@ class NodeLink:
 
 class OperateNode:
 	def __init__(self):
-		self.operateType = None# 枚举操作类型
+		self.operateType = None# 枚举操作类型 
 		self.leftValue = None# 左操作值
 		self.rightValue = None# 右操作值
-
-		self.otherValue = None# 三元操作 第三个操作数
-		# 只有操作节点可以有多入口  函数是仅多输入参数
+    
 		# 操作节点需要反向寻找入口的逻辑链头
 		pass
 
@@ -101,6 +120,37 @@ class CalculateNode:
 
 	def run(self):
 
+
+def initLinkNode(self, ruleList):
+	# 根据配置初始化事务逻辑链
+	# ["CSVData","6","UnlockCondition","Equal","Left"]
+	# ["String","","Equal","Right"]
+	# ["Branch","True","GetColList","GetColData","Parm1","CSVData","6","ItemId"]
+	# ["Branch","Result"]
+	# 
+	# CSVData,6,UnlockCondition bind ForArray
+	# ForArray loop Link Branch
+	# ForArray v Equal Left
+	# String "" Equal Right
+	# Equal Result Branch condition
+	# Branch True Link GetColList
+	# ForArray i GetColList, index
+	# CSVData 6 GetColList csv
+	# GetColList Link GetColData
+	# 
+	# 每个节点定义了参数个数 可有默认参数值
+	HeadNode = None
+	for rule in ruleList:
+		index = 0
+		maxIndex = lenght(rule)
+		while index < maxIndex:
+			ruleKey = rule[index]
+			node = InitNodeByKey(ruleKey, *args)
+			argsNum = node.getArgsNum()
+			args = []
+			for j in range(0,argsNum):
+				args.append(rule[index+j+1])
+			moveStep = node.getMoveStep()# 返回前进步数
 
 class TreeNode:
 	def __init__(self, csvName, csvKey, keyValueList)
@@ -183,7 +233,7 @@ def main(*args,**kargs):
 	for root, dirs, files in os.walk(serverRoot):
 		for filePath in files:
 			filePath = os.path.join(root,filePath)
-			if filePath[-4:] == ".erl":
+			if filePath[-4:] == ".erl":   
 				fileTuple = os.path.split(filePath)
 				G_Count = G_Count + 1
 				# print(fileTuple[0][-15:],fileTuple[1])

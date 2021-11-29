@@ -1,0 +1,124 @@
+/*
+	表结构采用Json    格式验证	https://www.json.cn/
+*/
+{
+	"CSVKeyRule" : {
+		"__Test_1" : [
+			{"name":"A"},
+			{"name":"B"},
+			{"name":"C"},
+			{"name":"D"}
+		],
+		"__Test_2" : [
+			{"name":"B"},
+			{"name":"D"},
+			{"name":"E"}
+		],
+		"__Test_3" : [
+			{"name":"E"},
+			{"name":"F"}
+		],
+		"__Test_4" : [
+			{"name":"D"},
+			{"name":"F"}
+		], 
+
+		"CommonItemTable" : [
+			{"name":"ItemID","type":"Number","ListSplit":"","RangeLimit":[1,2,3,4],"IgnoreRange":[""]}
+		],
+		"BagChildUnlockTable" : [
+			{"name":"UnlockCondition","type":"Number","ListSplit":"","RangeLimit":["",1,0],"IgnoreRange":[]},
+			{"name":"Parm1","type":"Number","ListSplit":"","RangeLimit":[],"IgnoreRange":[""]}
+		],
+		"DefaultRole" : [
+			{"name":"role_prop_id","type":"Number","RangeLimit":[],"IgnoreRange":["1"]},
+			{"name":"career_id","type":"Number","RangeLimit":[],"IgnoreRange":[""]},
+			{"name":"weapon_id","type":"Number","RangeLimit":[],"IgnoreRange":[""]},
+			{"name":"talent_ids","type":"List","ListSplit":";","RangeLimit":[],"IgnoreRange":[""]}
+		],
+		"CareerDataTable" : [
+		 	{"name":"CareerId","type":"Number","IgnoreRange":[]}
+		],
+		"RoleAttributes" : [
+			{"name":"role_id","type":"Number","ListSplit":"","RangeLimit":[],"IgnoreRange":[]},
+			{"name":"CareerId","type":"Number","ListSplit":"","RangeLimit":[],"IgnoreRange":[""]}
+		]
+	},
+	"CSVMap" : [// csv的数字索引关系 保存时采用数字字符串做key的字典
+		[1,"__Test_1"],
+		[2,"__Test_2"],
+		[3,"__Test_3"],
+		[4,"__Test_4"],
+		[5,"CommonItemTable"],
+		[6,"BagChildUnlockTable"],
+		[7,"DefaultRole"]
+	],
+	"FuncRuleList" : [
+		[//操作结点 各操作结点仅对应一个类 主要是记录操作类型 对应的实例对象
+			["List",2,"Left","Right","Bind","NewNode",1,"OperateNode","Add","Args"],
+			["List",1,"Result","Bind","NewNode",1,"OperateNode","Add","Rets"],
+			["List",2,"Left","Right","Bind","NewNode",2,"OperateNode","Equal","Args"],
+			["List",1,"Result","Bind","NewNode",2,"OperateNode","Equal","Rets"],
+			["List",2,"Left","Right","Bind","NewNode",3,"OperateNode","Not","Args"],
+			["List",1,"Result","Bind","NewNode",3,"OperateNode","Not","Rets"],
+			["List",2,"Left","Right","Bind","NewNode",4,"OperateNode","Add","Args"],
+			["List",1,"Result","Bind","NewNode",4,"OperateNode","And","Rets"],
+			["List",2,"Left","Right","Bind","NewNode",5,"OperateNode","Less","Args"],
+			["List",1,"Result","Bind","NewNode",5,"OperateNode","Less","Rets"],
+			["NewNode",1,"Link","NewNode",2],
+			["NewNode",2,"Link","NewNode",3],
+			["NewNode",3,"Link","NewNode",4],
+			["NewNode",4,"Link","NewNode",5]
+		],
+		[//基础函数 记录各函数名 对应的实例对象
+			// []
+		]
+	],
+	"CSVColRuleList" : [//关联数据
+		[//描述关系的每棵树
+			[1,"B",2,"B",2,"E",3,"E"],
+			[2,"B",2,"D",4,"D"],
+			[1,"B","D",2,"B","D"]
+		],
+		[
+			[6,"Parm1",5,"ItemID"]
+		],
+		[
+			[7,"role_prop_id",5,"ItemID"]
+		]
+	],
+	"CSVRowRuleList" : [//关联数据
+		[//描述关系的每棵树
+			["CSVData","BagChildUnlockTable","UnlockCondition","Bind","ForArray","List"],
+			["ForArray","Loop","Link","Branch"],
+			["ForArray","Value","Bind","Equal",1,"Left"],
+			["String","1","Bind","Equal",1,"Right"],
+			["Equal",1,"Bind","Branch","condition"],
+			["Branch","True","Link","GetListValueByIndex"],
+			["CSVData","BagChildUnlockTable","Parm1","Bind","GetListValueByIndex","List"],
+			["ForArray","Index","Bind","GetListValueByIndex","Index"],
+			["GetListValueByIndex","Bind","GetListIndexByValue","Value"],
+			["GetListValueByIndex","Next","Link","GetListIndexByValue"],
+			["CSVData","CommonItemTable","ItemID","Bind","GetListIndexByValue","List"],
+			["GetListIndexByValue","Bind","Equal",2,"Left"],
+			["ValueNode",-1,"Bind","Equal",2,"Right"],
+			["GetListIndexByValue","Next","Link","Branch",1],
+			["Equal",2,"Bind","Branch",1,"condition"],
+			["String","True","Bind","PrintString",1,"String"],
+			// ["Branch",1,"False","Link","PrintString",1],
+			["String","BagChildUnlockTable.csv  :","Bind","PrintString",2,"String"],
+			["GetListValueByIndex","Bind","PrintString",2,"AppendString"],
+			["String"," not find in CommonItemTable.csv ItemID Col","Bind","PrintString",2,"AppendString"],
+			["Branch",1,"True","Link","PrintString",2]
+		],
+		[
+			["CSVData","DefaultRole","role_prop_id","Bind","ForArray","List"],
+			["ForArray","Loop","Link"],
+			["ForArray","Index","Bind","GetListValueByIndex","Index"],
+			["CSVData","DefaultRole","talent_ids","Bind","GetListValueByIndex","List"],
+			["GetListValueByIndex","Value","Bind","ForArray",1,"List"],
+			["ForArray","Loop","Bind","ForArray",1,"List"],
+			["ForArray","Value","Bind","ForArray",1,"List"],
+		]
+	]
+}
