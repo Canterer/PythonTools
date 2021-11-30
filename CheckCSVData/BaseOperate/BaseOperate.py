@@ -35,7 +35,7 @@ class NewNode(BaseNode):
 			Log("NewNode Init nodeName:{0} instanceName:{1} fieldName:{2}".format(nodeName, instanceName, fieldName))
 			if self.holdNode is None:
 				# self.holdNode = globals()[nodeName].__init__(nodeName, instanceName)
-				Log("NewNode cls:{0}".format(cls))
+				# Log("NewNode cls:{0}".format(cls))
 				# 函数类 这里仅声明函数  没有函数对象实例名
 				# 创建对象为了将 函数名 申明为关键字 用于识别其所属类
 				self.holdNode = cls(instanceName,None)

@@ -301,12 +301,17 @@ class ValueNode(BaseNode):
 	# 	self.setValue(None)#绑定返回值
 
 #表达式
+OperateTypeNameList = ["Add","Not","And","Equal","None"]
 class OperateNode(ValueNode):
 	"""操作结点 其值在取值时进行计算"""
 	"""蓝图取值之前 对该值的计算不像程序语言那样 在定义处运行 而是取值时计算"""
 	# argsNum = 2#操作结点操作数一致   instanceId、Field
 	def __init__(self, operateType, instanceName=None):
-		BaseNode.SubNodeClassDic.setdefault(operateType, OperateNode)#记录类型名 转换对应类
+		# BaseNode.SubNodeClassDic.setdefault(operateType, OperateNode)#记录类型名 转换对应类
+		if operateType in OperateTypeNameList:
+			BaseNode.SubNodeClassDic.setdefault(operateType, OperateNode)
+		else:
+			operateType = "None"
 		#直接调用ValueNode的父类BaseNode  不调用ValueNode的__init__方法
 		# print("OperateNode operateType:{0} instanceName:{1}".format(operateType, instanceName))
 		super(ValueNode, self).__init__(operateType, instanceName)
@@ -315,9 +320,10 @@ class OperateNode(ValueNode):
 		OperateNode.setHandlesList([])
 		self.initRetsNodeSlot()
 		self.operateType = operateType# 枚举操作类型
+		
 
-# 	def getOperateType(self):
-# 		return self.nodeName
+	# def getOperateType(self):
+	# 	return self.nodeName
 
 	#各个子类重定义
 	def getValue(self, fieldName=None):
@@ -329,7 +335,7 @@ class OperateNode(ValueNode):
 		return self.getReturnValue(fieldName)
 
 	def calculate(self):
-# 		operateType = self.getOperateType()
+		# operateType = self.getOperateType()
 		operateType = self.operateType
 		if operateType == "Add":
 			l = self.getArgValue("Left")
@@ -350,6 +356,8 @@ class OperateNode(ValueNode):
 			l = self.getArgValue("Left")
 			r = self.getArgValue("Right")
 			self.setValue(l < r)
+		elif operateType == "None":
+			self.setValue(None)
 
 class CalculateNode(BaseNode):
 	def __init__(self, nodeName, instanceName, argsList=[], retsList=[], handlesList=[]):
@@ -538,6 +546,8 @@ class List(ValueNode):
 	def setValue(self, value):
 		print("List is literal, can't setValue value:{0}".format(value))
 
+# 记录操作名对应类  Add、Equal对应OperateNode
+[OperateNode(operateType) for operateType in OperateTypeNameList]
 def main(*args,**kwargs):
 	pass
 

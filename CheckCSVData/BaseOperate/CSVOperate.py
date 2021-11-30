@@ -10,7 +10,7 @@ from BaseCore.Base import *
 
 class CSVData(ValueNode):
 	def readCSV(self, csvName):
-		DefaultCSVFolder = "..\\NZTrunk\\Documents\\csv"
+		DefaultCSVFolder = "CSVData"#"..\\NZTrunk\\Documents\\csv"
 		filePath = os.path.join(os.getcwd(), DefaultCSVFolder, csvName+".csv")
 		with open(filePath, mode="r", encoding="utf-8-sig",errors="ignore") as f:
 			lineIndex = 0
