@@ -6,27 +6,66 @@ from BaseCore.Base import *
 # from BaseCore.Base import BaseNode
 # from BaseCore.Base import CalculateNode
 
+#主要用于 将函数名 申明为关键字 用于识别其所属类
 class NewNode(BaseNode):
 	def __init__(self, nodeName, instanceName):
 		super(NewNode, self).__init__(nodeName, instanceName)
 		NewNode.setArgsList(["Args","Rets","Handles"])#暂定操作参数为两个
+		self.holdNode = None
 
 	def getFieldByRule(self, fieldNameList, moveStep = 0):
+		nodeName = None
+		defaultFieldName = self.getDefaultFieldName()
+		if len(fieldNameList) == 0:
+			self.setMoveStep(moveStep)
+			return defaultFieldName
+
 		nodeName = fieldNameList[0]
-		instanceName = fieldNameList[1]
-		fieldName = fieldNameList[2]
-		self.holdNode - globals()[nodeName].__init__(nodeName, instanceName)
-		self.setMoveStep(moveStep+3)
+		if nodeName == defaultFieldName:
+			self.setMoveStep(moveStep+1)
+			return defaultFieldName
+		elif nodeName == "Link":
+			self.setMoveStep(moveStep)
+			return defaultFieldName
+
+		cls = globals()[nodeName]
+		if cls :
+			instanceName = fieldNameList[1]
+			fieldName = fieldNameList[2]
+			Log("NewNode Init nodeName:{0} instanceName:{1} fieldName:{2}".format(nodeName, instanceName, fieldName))
+			if self.holdNode is None:
+				# self.holdNode = globals()[nodeName].__init__(nodeName, instanceName)
+				Log("NewNode cls:{0}".format(cls))
+				# 函数类 这里仅声明函数  没有函数对象实例名
+				# 创建对象为了将 函数名 申明为关键字 用于识别其所属类
+				self.holdNode = cls(instanceName,None)
+			self.setMoveStep(moveStep+3)
+		else:
+			fieldName = defaultFieldName		
 		return fieldName
 
 	def calculate(self):
-		argsList = self.getArgNodeSlot("Args").getValue()
+		argsList = []
+		retsList = []
+		handlesList = []
+		nodeSlot = self.getArgNodeSlot("Args")
+		if nodeSlot:
+			argsList = nodeSlot.getValue()
 		self.holdNode.setArgsList(argsList)
-		retsList = self.getArgNodeSlot("Rets").getValue()
+		nodeSlot = self.getArgNodeSlot("Rets")
+		if nodeSlot:
+			retsList = nodeSlot.getValue()
 		self.holdNode.setRetsList(retsList)
-		handlesList = self.getArgNodeSlot("Handles").getValue()
+		nodeSlot = self.getArgNodeSlot("Handles")
+		if nodeSlot:
+			handlesList = nodeSlot.getValue()
 		self.holdNode.setHandlesList(handlesList)
-		self.holdNode.run()
+		# self.holdNode.run()
+	
+	# def run(self):
+	# 	BaseNode.run(self)
+	# 	if self.holdNode:
+	# 		self.holdNode.run()
 
 class Assign(CalculateNode):
 	def __init__(self, nodeName, instanceName):
@@ -78,15 +117,27 @@ class Sequeue(CalculateNode):
 class PrintString(CalculateNode):
 	def __init__(self, nodeName, instanceName):
 		super(PrintString, self).__init__("PrintString", instanceName, ["String"],[],["Next"])
+		self.appendList = None
 
 	@classmethod
 	def getInsMoveStepByRule(cls, keyWord):
 		return BaseNode.getInsMoveStepByRule(keyWord)
+	
+	def bindArgNodeSlot(self, fieldName, nodeSlot):
+		if self.appendList is None:
+			self.appendList = []
+		if fieldName == "AppendString":
+			self.appendList.append(nodeSlot)
+		else:
+			BaseNode.bindArgNodeSlot(self, fieldName, nodeSlot)
 
 	def calculate(self):
 		nodeSlot = self.getArgNodeSlot("String")
 		value = nodeSlot.getValue()
-		print("PrintString +++++>>{0}".format(value))
+		if self.appendList:
+			for nodeSlot in self.appendList:
+				value = value + nodeSlot.getValue()
+		print("PrintString +++++++>>>>>{0}".format(value))
 
 class ForArray(CalculateNode):
 	def __init__(self, nodeName, instanceName):
