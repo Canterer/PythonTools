@@ -16,8 +16,17 @@ LogLimitList = [
 	# "Equal",
 ]
 def Log(logStr=""):
-	print(logStr)
-	pass
+	flag = False
+	for i,limitStr in enumerate(LogLimitList):
+		if re.match(limitStr, logStr):
+			flag = True
+			break
+	if LogLimitList and not flag:
+		return
+
+	global LogTag
+	LogTag = (LogTag + 1)%10
+	print("{0}\n{1}\n{0}".format(str(LogTag)*20,logStr))
 
 # 遗留问题
 # 多参数初始化问题(子类重复定义argsNum来获取规则关键字+自定义函数进行初始化)
@@ -81,6 +90,10 @@ class BaseNode:
 	def getNodeInstance(nodeName, instanceName):
 		insDic = BaseNode.SubNodeInsDic.get(nodeName, {})
 		return insDic.get(instanceName, None)
+	
+	# @classmethod
+	# def getInstanceName(cls):
+	# 	return BaseNode.SubNodeInsIndex.setdefault(cls.nodeName, 0)
 
 	@classmethod
 	def setArgsList(cls, argsList):
@@ -220,6 +233,8 @@ class BaseNode:
 	# 定义结点后续
 	def runNext(self):
 		nextNode = self.getHandleLinkNode("Next")
+		if nextNode:
+			nextNode.run()
 
 	def run(self):
 		self.initLocalArgs()#实参初始化
@@ -238,23 +253,48 @@ class BaseNode:
 	def getFuncLocalDic():
 		return {}
 		# return BaseNode.LocalFuncValueDicStack[-1]
+		
+	def WaitBind(self, fieldNameList, node):
+		self.fieldNameList = fieldNameList
+		self.waitNode = node
+
+	def SetBind(self, fieldName):
+		if fieldName in self.fieldNameList:
+			self.fieldNameList.remove(fieldName)
+			if not self.fieldNameList:
+				self.waitNode.run()
+
+	@staticmethod
+	def RunNextNode():
+		if BaseNode.nextNode:
+			BaseNode.nextNode.run()
+
+	@staticmethod
+	def setRunNextNode(nextNode):
+		BaseNode.nextNode = nextNode
 	
 class ValueNode(BaseNode):
 	"""局部变量 全局变量 表达式"""
 	def __init__(self, valueType, valueName):
 		print("ValueNode valueType:{0} valueName:{1}".format(valueType, valueName))
-		super(ValueNode, self).__init__(valueType, valueName)
+		# BaseNode.subNodeClassDic.setdefault(valueType, ValueNode)
+		super(ValueNode, self).__init__(valueType, valueName)#结点类型名
 		ValueNode.setArgsList([])
 		ValueNode.setRetsList(["Result"])
 		ValueNode.setHandlesList([])
 		self.initRetsNodeSlot()#确定返回值列表后调用
 
 	def setValue(self, value):
-		self.bindReturnValue("Result", value)
+		fieldName = self.getDefaultFieldName()
+		self.bindReturnValue(fieldName, value)
 
 	#各个子类重定义
 	def getValue(self,fieldName=None):
-		return self.getReturnValue("Result")
+		if fieldName is None:
+			fieldName = self.getDefaultFieldName()
+		elif fieldName != "Result":
+			print("ValueNode getValue(fieldName={0}) is error! fieldName need be Result".format(fieldName))
+		return self.getReturnValue(fieldName)
 
 	#数值结点 获取返回值结果时 取值时运算逻辑
 	# def caluculate(self):
@@ -264,6 +304,7 @@ class ValueNode(BaseNode):
 class OperateNode(ValueNode):
 	"""操作结点 其值在取值时进行计算"""
 	"""蓝图取值之前 对该值的计算不像程序语言那样 在定义处运行 而是取值时计算"""
+	# argsNum = 2#操作结点操作数一致   instanceId、Field
 	def __init__(self, operateType, instanceName=None):
 		BaseNode.SubNodeClassDic.setdefault(operateType, OperateNode)#记录类型名 转换对应类
 		#直接调用ValueNode的父类BaseNode  不调用ValueNode的__init__方法
@@ -273,24 +314,30 @@ class OperateNode(ValueNode):
 		OperateNode.setRetsList("Result")
 		OperateNode.setHandlesList([])
 		self.initRetsNodeSlot()
+		self.operateType = operateType# 枚举操作类型
 
-	def getOperateType(self):
-		return self.nodeName
+# 	def getOperateType(self):
+# 		return self.nodeName
 
 	#各个子类重定义
 	def getValue(self, fieldName=None):
+		if fieldName is None:
+			fieldName = self.getDefaultFieldName()
+		elif fieldName != "Result":
+			print("Error")
 		self.run()#取值时重新运算逻辑
-		return self.getReturnValue("Result")
+		return self.getReturnValue(fieldName)
 
 	def calculate(self):
-		operateType = self.getOperateType()
+# 		operateType = self.getOperateType()
+		operateType = self.operateType
 		if operateType == "Add":
 			l = self.getArgValue("Left")
 			r = self.getArgValue("Right")
 			self.setValue(l + r)
 		elif operateType == "Not":
 			l = self.getArgValue("Left")
-			self.setValue(not r)
+			self.setValue(not l)
 		elif operateType == "And":
 			l = self.getArgValue("Left")
 			r = self.getArgValue("Right")
@@ -308,12 +355,22 @@ class CalculateNode(BaseNode):
 	def __init__(self, nodeName, instanceName, argsList=[], retsList=[], handlesList=[]):
 		# argsList, retsList, handlesList三个参数由规则定义
 		# print("CalculateNode nodeName:{0} instanceName:{1}".format(nodeName, instanceName))
-		super(CalculateNode, self).__init__(nodeName, instanceName)
+		# if nodeName is None:#动态参数节点
+		# print("nodeName is None")
+		super(CalculateNode, self).__init__(nodeName, instanceName)#结点类型名
 		# 此处为类实例 设置参数列表、返回值列表、句柄列表
 		self.setArgsList(argsList)
 		self.setRetsList(retsList)
 		self.setHandlesList(handlesList)
 		self.initRetsNodeSlot()
+		# else:#特定类(固定参数)的节点
+		# 	print("nodeName is not None:{0}".format(nodeName))
+		# 	super(CalculateNode, self).__init__(nodeName,valueName)#结点类型名
+		# 	print("globals()[nodeName={0}]:{1}".format(nodeName, globals()[nodeName]))
+		# 	globals()[nodeName].setArgsList(argsList)
+		# 	globals()[nodeName].setRetsList(retsList)
+		# 	globals()[nodeName].setHandlesList(handlesList)
+		# pass
 		
 	#重载设置参数列表、返回值列表、句柄列表  将数据下放到实例对象
 	def setArgsList(self, argsList):
@@ -369,7 +426,7 @@ class CompositeNode(CalculateNode):
 		self.endNode = CalculateNode("CalculateNode", "endNode", retsList, [], handlesList)
 
 	@staticmethod
-	def LinkStartNodeRule(nodeName, instanceName=None):
+	def LinkStartNode(nodeName, instanceName=None):
 		rule = ["CalculateNode","startNode","Next","Link"]
 		rule.append(nodeName)
 		if instanceName:
@@ -377,7 +434,7 @@ class CompositeNode(CalculateNode):
 		return rule
 
 	@staticmethod
-	def LinkEndNodeRule(nodeName, instanceName=None, fieldName=None):
+	def LinkEndNode(nodeName, instanceName=None, fieldName=None):
 		rule = []
 		rule.append(nodeName)
 		if instanceName:
@@ -392,18 +449,18 @@ class CompositeNode(CalculateNode):
 			self.startNode.bindReturnValue(fieldName, self.getLocalValue(fieldName))
 		for fieldName in self.getHandlesList():#函数句柄初始化
 			self.endNode.linkNodeField(fieldName, self.getHandleLinkNode(fieldName))
-		self.startNode.run()
+		self.startNode.run()#运行函数主体逻辑
 		for fieldName in self.getRetsList():#存放函数返回值
 			self.bindReturnValue(fieldName, self.endNode.getLocalValue(fieldName))
 
 # 局部变量仅在函数内部有意义
 class LocalValue(ValueNode):
-	def __init__(self, nodeName, instanceName):
-		print("LocalValue {0} init".format(nodeName))
-		if nodeName != "LocalValue":
-			print("LocalValue(nodeName={0}, instanceName={1}), nodeName == \"LocalValue\"".format(nodeName,instanceName))
-			nodeName = "LocalValue"
-		super(LocalValue, self).__init__(nodeName, instanceName)
+	def __init__(self, valueType, valueName):
+		print("LocalValue {0} init".format(valueName))
+		if valueType != "LocalValue":
+			print("LocalValue(valueType={0},value={1}), valueType ~= 'String'".format(valueType,value))
+			valueType = "LocalValue"
+		super(LocalValue, self).__init__(valueType, valueName)
 
 	@classmethod
 	def getInsMoveStepByRule(cls, keyWord):
@@ -418,11 +475,11 @@ class LocalValue(ValueNode):
 
 # 字面量 名字为其值
 class String(ValueNode):
-	def __init__(self, nodeName, instanceName):
-		if nodeName != "String":
-			print("String(nodeName={0} instanceName={1}, nodeName == \"String\"".format(nodeName, instanceName))
-			nodeName = "String"
-		super(String, self).__init__(nodeName, instanceName)
+	def __init__(self, valueType, value):
+		if valueType != "String":
+			print("String(valueType={0},value={1}), valueType ~= 'String'".format(valueType,value))
+			valueType = "String"
+		super(String, self).__init__(valueType, value)
 
 	@classmethod
 	def getInsMoveStepByRule(cls, keyWord):
@@ -436,11 +493,12 @@ class String(ValueNode):
 		print("String is literal, can't setValue value:{0}".format(value))
 
 class Int(ValueNode):
-	def __init__(self, nodeName, instanceName):
-		if nodeName != "Int":
-			print("Int(nodeName={0} instanceName={1}, nodeName == \"Int\"".format(nodeName, instanceName))
-			nodeName = "Int"
-		super(Int, self).__init__(nodeName, instanceName)
+	def __init__(self, valueType, value):
+		# print("Int init:{0}".format(value))
+		if valueType != "Int":
+			print("Int(valueType={0},value={1}), valueType ~= 'Int'".format(valueType,value))
+			valueType = "Int"
+		super(Int, self).__init__(valueType, value)
 
 	# 默认实例名就是数字 该函数可省略重载
 	@classmethod
@@ -455,11 +513,12 @@ class Int(ValueNode):
 		print("Int is literal, can't setValue value:{0}".format(value))
 
 class List(ValueNode):
-	def __init__(self, nodeName, instanceName):
-		if nodeName != "List":
-			print("List(nodeName={0} instanceName={1}, nodeName == \"List\"".format(nodeName, instanceName))
-			nodeName = "List"
-		super(List, self).__init__(nodeName, instanceName)
+	def __init__(self, valueType, value):
+		if valueType != "List":
+			print("List(valueType={0},value={1}), valueType ~= 'List'".format(valueType,value))
+			valueType = "List"
+		super(List, self).__init__(valueType, value)
+		self.bindReturnValue("Result", [])
 
 	@classmethod
 	def getInsMoveStepByRule(cls, keyWord):
