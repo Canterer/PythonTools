@@ -39,6 +39,7 @@ def GetNodeInsByRule(nodeName, keyWord):
 
 def initByRule(ruleList, headNodeName):
 	print("initRule start!!!!!")
+	# 每个节点定义了参数个数 可有默认参数值
 	headNode = None
 	for rule in ruleList:
 		index = 0
@@ -78,12 +79,19 @@ def initByRule(ruleList, headNodeName):
 				nodeSlot = lastNode.getRetNodeSlot(lastFieldName)
 				nodeIns.bindArgNodeSlot(fieldName, nodeSlot)
 			elif keyWord == "Link":#不需要fieldName
+				if headNodeName is None:
+					headNodeName = lastNode.nodeName
+					HeadNode = lastNode
+					print(HeadNode)
+					print(headNodeName)
 				print("Link\nnode:{0} fieldName:{1} Link node:{2}".format(lastNode,lastFieldName,nodeIns))
 				lastNode.linkNodeField(lastFieldName, nodeIns)
 			else:
 				fieldNameList = []
 				if index < maxIndex:
 					fieldNameList = rule[index:]
+				# else:#无参数 代表fieldName为空 采取默认的
+				# print("not arg to getFieldByRule!!!")
 				fieldName = nodeIns.getFieldByRule(fieldNameList)
 				moveStep = nodeIns.getMoveStep()
 				index = index + moveStep
@@ -93,7 +101,7 @@ def initByRule(ruleList, headNodeName):
 			lastNode = nodeIns
 			lastFieldName = fieldName
 
-	print("initByRule end!!!!!")
+	print("initByRule end!!!!!!! headNodeName:{0}".format(headNodeName))
 	if headNode:
 		LogLink(headNode)
 	return headNode
@@ -117,7 +125,14 @@ def runRuleList(ruleList, headNodeName, instanceName, linkEndNodeList):
 		print("runRuleList() headNode is None")
 	pass
 
-
+def testRuleFunc():
+	# 函数定义   未实现
+	ruleList = []
+	ruleList.append(["List","2","min","max","Bind","NewNode","Composite","GetRange","Args"])
+	ruleList.append(["List","1","rangeList","Bind","NewNode","Composite","GetRange","Rets"])
+	ruleList.append(["Int","1","Bind","GetRange","min"])
+	ruleList.append(["Int","3","Bind","GetRange","max"])
+	return ruleList
 
 def main(*args,**kwargs):
 	OperateNode("Add")
@@ -127,10 +142,28 @@ def main(*args,**kwargs):
 	OperateNode("Less")
 
 	ruleList = []
-	ruleList.append(["String","Test","Bind","PrintString","String"])
-	runRuleList(ruleList,"PrintString",None,[("PrintString",None,"Next"),])
-	# ruleList.append(["CSVData","BagChildUnLockTable","UnLockCondition","Bind","ForArray","List"])
-	# resultList.append()
+	ruleList.append(["CSVData","BagChildUnlockTable","UnlockCondition","Bind","ForArray","List"])
+	ruleList.append(["ForArray","Loop","Link","Branch"])
+	ruleList.append(["ForArray","Value","Bind","Equal",1,"Left"])
+	ruleList.append(["String","1","Bind","Equal",1,"Right"])
+	ruleList.append(["Equal",1,"Bind","Branch","condition"])
+	ruleList.append(["Branch","True","Link","GetListValueByIndex"])
+	ruleList.append(["CSVData","BagChildUnlockTable","Parm1","Bind","GetListValueByIndex","List"])
+	ruleList.append(["ForArray","Index","Bind","GetListValueByIndex","Index"])
+	ruleList.append(["GetListValueByIndex","Bind","GetListIndexByValue","Value"])
+	ruleList.append(["GetListValueByIndex","Next","Link","GetListIndexByValue"])
+	ruleList.append(["CSVData","CommonItemTable","ItemID","Bind","GetListIndexByValue","List"])
+	ruleList.append(["GetListIndexByValue","Bind","Equal",2,"Left"])
+	ruleList.append(["ValueNode",-1,"Bind","Equal",2,"Right"])
+	ruleList.append(["GetListIndexByValue","Next","Link","Branch",1])
+	ruleList.append(["Equal",2,"Bind","Branch",1,"condition"])
+	# ruleList.append(["String","True","Bind","PrintString",1,"String"])
+	# ruleList.append(["Branch",1,"False","Link","PrintString",1])
+	ruleList.append(["GetListValueByIndex","Bind","PrintString",2,"String"])
+	ruleList.append(["Branch",1,"True","Link","PrintString",2])
+	# runRuleList(ruleList,"ForArray",None,[("PrintString",1,"Next"),("PrintString",2,"Next"),("Branch",None,"False")])
+	headNode = initByRule(ruleList,None)
+	headNode.run()
 	pass
 	# 改进一
 	# 采用渐进式的run 放弃原有的链式自动Run 对于部分复用结点可省略实例名 比如操作结点
