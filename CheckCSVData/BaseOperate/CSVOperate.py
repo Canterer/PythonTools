@@ -65,7 +65,7 @@ class GetListIndexByValue(CalculateNode):
 		valueList = nodeSlot.getValue()
 		nodeSlot = self.getArgNodeSlot("Value")
 		value = nodeSlot.getValue()
-		Log("GetListIndexByValue value:{0} list:{1}".format(value, valueList[:10]))
+		# Log("GetListIndexByValue value:{0} list:{1}".format(value, valueList[:10]))
 		if value in valueList:
 			index = valueList.index(value)
 			self.bindReturnValue("Result",index)
@@ -85,7 +85,7 @@ class GetListValueByIndex(CalculateNode):
 		valueList = nodeSlot.getValue()
 		nodeSlot = self.getArgNodeSlot("Index")
 		index = nodeSlot.getValue()
-		Log("GetListValueByIndex index:{0} list:{1}".format(index, valueList[:10]))
+		# Log("GetListValueByIndex index:{0} list:{1}".format(index, valueList[:10]))
 		if index < len(valueList):
 			value = valueList[index]
 			self.bindReturnValue("Result",value)
