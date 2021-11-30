@@ -311,7 +311,7 @@ class OperateNode(ValueNode):
 		# print("OperateNode operateType:{0} instanceName:{1}".format(operateType, instanceName))
 		super(ValueNode, self).__init__(operateType, instanceName)
 		OperateNode.setArgsList(["Left","Right"])#暂定操作参数为两个
-		OperateNode.setRetsList("Result")
+		OperateNode.setRetsList(["Result"])
 		OperateNode.setHandlesList([])
 		self.initRetsNodeSlot()
 		self.operateType = operateType# 枚举操作类型
