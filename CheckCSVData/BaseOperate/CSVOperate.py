@@ -41,8 +41,8 @@ class CSVData(ValueNode):
 		self.setArgsList([])
 		self.setRetsList(retsList)
 		self.setHandlesList([])
-		self.initRetsNodeSlot()
 		super(ValueNode, self).__init__(nodeName, instanceName)
+		self.initRetsNodeSlot()
 
 	@classmethod
 	def getInsMoveStepByRule(cls, keyWord):
