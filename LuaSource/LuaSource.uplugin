@@ -1,0 +1,43 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "LuaSource",
+	"Description": "LuaSource",
+	"Category": "Other",
+	"CreatedBy": "ruiqingkong",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"Installed": false,
+	"Modules": [
+    {
+      "Name": "LuaRuntime",
+      "Type": "Runtime",
+      "LoadingPhase": "Default",
+	  "BlacklistPlatforms": [
+		"Linux",
+	  ]
+    },
+	{
+		"Name" : "LuaEditor",
+		"Type" : "Editor",
+		"LoadingPhase" : "PostDefault",
+		"BlacklistPlatforms": [
+			"Linux",
+			"iOS",
+			"Android"
+		]
+	}
+    ],
+    "Plugins": [
+        {
+            "Name" : "slua_unreal",
+            "Enabled" : true
+        }
+    ]
+	
+}
