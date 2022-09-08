@@ -1,0 +1,2 @@
+
+DECLARE_LOG_CATEGORY_CLASS(LogFileTagHelper,Log,All);
