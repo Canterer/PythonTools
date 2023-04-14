@@ -29,9 +29,15 @@ def reurl(url):
 #获取密钥
 def getKey(keystr,prefix_url,web_ip_url):
     keyinfo= str(keystr)
+    print("keyInfo:",keyinfo)
     method_pos= keyinfo.find('METHOD')
     comma_pos = keyinfo.find(",")
+    print(comma_pos,len(keyinfo))
+    if comma_pos == -1:
+        return None,None
     method = keyinfo[method_pos:comma_pos].split('=')[1]
+    if method == "NONE":
+        return None,None
     uri_pos = keyinfo.find("URI")
     quotation_mark_pos = keyinfo.rfind('"')
     key_url = keyinfo[uri_pos:quotation_mark_pos].split('"')[1]
@@ -91,7 +97,7 @@ def download(ts_info,prefix_url,web_ip_url,decrypt,down_path,key):
 def merge_to_mp4(dest_file, source_path,ts_list, delete=False):
     files = glob.glob(source_path + '/*.ts')
     if len(files)!=len(ts_list):
-        print("文件不完整！")
+        print("文件不完整！{0}!={1}".format(len(files),len(ts_list)))
         return
     folderPath = os.path.dirname(dest_file)
     if not os.path.exists(folderPath):
@@ -110,7 +116,7 @@ def main(*args):
     delete_ts_flag = False
     out_file_name = None
     if len(args) > 1:
-        delete_ts_flag = bool(args[1])
+        delete_ts_flag = args[1]=="True"
     if len(args) > 2:
         out_file_name = args[2]
     
@@ -139,7 +145,16 @@ def main(*args):
     print("video.keys:",video.keys)
     if len(video.keys) > 0 and video.keys[0] is not None:
         method,key =getKey(video.keys[0],prefix_url,web_ip_url)
-        decrypt = True
+        # 针对性特殊处理
+        if len(video.keys) == 2 and video.keys[1] is not None:
+            methodTemp,keyTemp = getKey(video.keys[1],prefix_url,web_ip_url)
+            if methodTemp is not None:
+                method = methodTemp
+                key = keyTemp
+        # 针对性特殊处理
+        print("video method:{0} key:{1}".format(method,key))
+        if method is not None:
+            decrypt = True
     
     
     #判断是否需要创建文件夹
@@ -157,7 +172,16 @@ def main(*args):
     total_ts_num = len(video.segments)
     ts_name="ts_name_none"
     # for i in range(total_ts_num)
-    for filename  in video.segments:
+     # 针对性特殊处理
+    tempList = []
+    for i,filename in enumerate(video.segments):
+        if reurl(filename.uri):
+            continue
+        tempList.append(filename)
+    # for i in range(10):
+    #     tempList.pop()
+    # 针对性特殊处理
+    for i,filename in enumerate(tempList):
         if reurl(filename.uri) or filename.uri[0] == "/":
             ts_name = filename.uri.rsplit("/", 1)[1]
         else:
