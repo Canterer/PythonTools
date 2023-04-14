@@ -1,18 +1,22 @@
 @echo off
+tasklist | find "cmd.exe" >recordCmdPid.txt
+start  /min cmd /k  AutoReset.bat
+
 set file=Input.txt
-@rem set /p file=ÇëÊäÈëÎÄ¼şÃû£º
+@rem set /p file=è¯·è¾“å…¥æ–‡ä»¶åï¼š
 echo %file%
 
 :reload_file
 
-for /f "tokens=1-4 " %%i  in (%file%) do (
+for /f "tokens=1-2 " %%i  in (%file%) do (
 echo %%i
 echo %%j
-echo %%k
-echo %%l
-python LoadM3U8.py %%i %%j %%k %%l
+@rem echo %%k
+@rem echo %%l
+@rem F:\SystemSofts\Python38\python.exe LoadM3U8.py %%i %%j %%k %%l
+F:\SystemSofts\Python38\python.exe LoadM3U8.py %%i False %%j 2
 )
 
-set /p i="ÊäÈëÈÎÒâ·Ç¿Õ×Ö·ûÍË³ö:"
+set /p i="è¾“å…¥ä»»æ„éç©ºå­—ç¬¦é€€å‡º:"
 echo "%i%"
 if "%i%"=="" goto reload_file
