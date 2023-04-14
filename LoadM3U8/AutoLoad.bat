@@ -9,12 +9,15 @@ echo %file%
 :reload_file
 
 for /f "tokens=1-2 " %%i  in (%file%) do (
-echo %%i
-echo %%j
-@rem echo %%k
-@rem echo %%l
-@rem F:\SystemSofts\Python38\python.exe LoadM3U8.py %%i %%j %%k %%l
-F:\SystemSofts\Python38\python.exe LoadM3U8.py %%i False %%j 2
+    if not "%%i"=="" (
+        if not "%%j"=="" (
+            F:\SystemSofts\Python38\python.exe LoadM3U8.py %%i False %%j 2
+        ) else ( 
+            echo "can't find %%%% j in line:"
+            echo. %%i
+        )
+    ) else echo "can't find %%%% i"
+@rem F:\SystemSofts\Python38\python.exe LoadM3U8.py %%i False %%j 2
 )
 
 set /p i="输入任意非空字符退出:"
