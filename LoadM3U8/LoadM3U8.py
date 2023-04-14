@@ -12,7 +12,7 @@ from urllib3 import disable_warnings
 disable_warnings()
 import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
-
+#http://vip8.3sybf.com/20230220/6PvSCFNx/700kb/hls/index.m3u8	output\9148713.mp4
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.82 Safari/537.36"
 }
