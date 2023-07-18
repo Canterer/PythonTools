@@ -122,7 +122,8 @@ def main(*args):
     
     print("url:{0} delete_ts_flag:{1}".format(url,delete_ts_flag))
     web_ip_url = url[:8]+url[8:].split("/",1)[0]
-    prefix_url = url.split("/",1)[0]
+    prefix_url = url.rsplit("/",1)[0]
+    print("web_ip_url :{0} \nprefix_url:{1}".format(web_ip_url,prefix_url))
 
     #设置下载路径
     down_root_path="tmp"
