@@ -47,6 +47,9 @@ def getKey(keystr,prefix_url,web_ip_url):
         else:
             key_url = prefix_url + "/" + key_url
     print("key_url:",key_url)
+    if key_url[:5] == "https":
+        print("change url protocol !!! https to http")
+        key_url = key_url[:4] + key_url[5:]
     res = requests.get(key_url,headers=headers)
     key = res.content
     print("getKey method:",method)
@@ -73,6 +76,9 @@ def download(ts_info,prefix_url,web_ip_url,decrypt,down_path,key):
             down_url = prefix_url + "/" + ts_url
     try:
         print("get ",down_url)
+        if down_url[:5] == "https":
+            print("change url protocol !!! https to http")
+            down_url = down_url[:4] + down_url[5:]
         res = requests.get(down_url, stream=True, verify=False,headers=headers)
     except Exception as e:
         print("error requests.get url:{0} exception:{1}".format(down_url,e))
