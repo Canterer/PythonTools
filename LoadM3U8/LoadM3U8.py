@@ -16,6 +16,7 @@ ssl._create_default_https_context = ssl._create_unverified_context
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.82 Safari/537.36"
 }
+bForceHttp = False
 
 #正则表达判断是否为网站地址
 def reurl(url):
@@ -47,8 +48,8 @@ def getKey(keystr,prefix_url,web_ip_url):
         else:
             key_url = prefix_url + "/" + key_url
     print("key_url:",key_url)
-    if key_url[:5] == "https":
-        print("change url protocol !!! https to http")
+    if bForceHttp and key_url[:5] == "https":
+        print("change key url protocol !!! https to http")
         key_url = key_url[:4] + key_url[5:]
     res = requests.get(key_url,headers=headers)
     key = res.content
@@ -76,13 +77,15 @@ def download(ts_info,prefix_url,web_ip_url,decrypt,down_path,key):
             down_url = prefix_url + "/" + ts_url
     try:
         print("get ",down_url)
-        if down_url[:5] == "https":
-            print("change url protocol !!! https to http")
-            down_url = down_url[:4] + down_url[5:]
+        if bForceHttp and down_url[:5] == "https":
+            print("change ts url protocol !!! https to http")
+            #down_url = down_url[:4] + down_url[5:]
         res = requests.get(down_url, stream=True, verify=False,headers=headers)
     except Exception as e:
         print("error requests.get url:{0} exception:{1}".format(down_url,e))
         return
+    if len(filename) > 200:
+        filename = filename[-30:]
     ts_path = down_path+"/{0}".format(filename)
     if decrypt:
         cryptor =  AES.new(key, AES.MODE_CBC, key)
@@ -126,6 +129,7 @@ def main(*args):
     if len(args) > 2:
         out_file_name = args[2]
     
+    print("bForceHttp:{0}".format(bForceHttp))
     print("url:{0} delete_ts_flag:{1}".format(url,delete_ts_flag))
     web_ip_url = url[:8]+url[8:].split("/",1)[0]
     prefix_url = url.rsplit("/",1)[0]
@@ -142,9 +146,34 @@ def main(*args):
         return
     down_sub_folder=wordList[sub_folder_index]
 
+    #判断是否需要创建文件夹
+    if not os.path.exists(down_root_path):
+        os.mkdir(down_root_path)
+    down_path=os.path.join(down_root_path,down_sub_folder)
+    print("down_path:",down_path)
+    if not os.path.exists(down_path):
+        os.mkdir(down_path)
 
-    #使用m3u8库获取文件信息
-    video = m3u8.load(url)
+    m3u8Path = down_path+"/_index.m3u8"
+    if not os.path.exists(m3u8Path):
+        try:
+            print("get m3u8=",url)
+            if bForceHttp and url[:5] == "https":
+                print("change m3u8 url protocol !!! https to http")
+                #url = url[:4] + url[5:]
+            res = requests.get(url, stream=True, verify=False,headers=headers)
+        except Exception as e:
+            print("error requests.get url:{0} exception:{1}".format(url,e))
+            return
+    
+        with open(m3u8Path,"wb+") as file:
+            for chunk in res.iter_content(chunk_size=1024):
+                if chunk:                
+                    file.write(chunk)
+
+    #使用m3u8库获取文件信息                
+    video = m3u8.load(m3u8Path)
+    #video = m3u8.load(url)
     #设置是否加密标志
     decrypt = False
     key = None
@@ -164,13 +193,7 @@ def main(*args):
             decrypt = True
     
     
-    #判断是否需要创建文件夹
-    if not os.path.exists(down_root_path):
-        os.mkdir(down_root_path)
-    down_path=os.path.join(down_root_path,down_sub_folder)
-    print("down_path:",down_path)
-    if not os.path.exists(down_path):
-        os.mkdir(down_path)
+    
     
     #ts列表
     ts_name_list=[]
@@ -182,8 +205,8 @@ def main(*args):
      # 针对性特殊处理
     tempList = []
     for i,filename in enumerate(video.segments):
-        if reurl(filename.uri):
-            continue
+        #if reurl(filename.uri):
+           # continue
         tempList.append(filename)
     # for i in range(10):
     #     tempList.pop()
