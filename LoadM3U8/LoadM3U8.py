@@ -18,6 +18,12 @@ headers = {
 }
 bForceHttp = False
 
+#防止ts名字过长
+def fixLongFileName(filename):
+    if len(filename) > 200:
+        filename = filename[-30:]
+    return filename
+
 #正则表达判断是否为网站地址
 def reurl(url):
     pattern = re.compile(r'^((https|http|ftp|rtsp|mms)?:\/\/)[^\s]+')
@@ -84,9 +90,7 @@ def download(ts_info,prefix_url,web_ip_url,decrypt,down_path,key):
     except Exception as e:
         print("error requests.get url:{0} exception:{1}".format(down_url,e))
         return
-    if len(filename) > 200:
-        filename = filename[-30:]
-    ts_path = down_path+"/{0}".format(filename)
+    ts_path = down_path+"/{0}".format(fixLongFileName(filename))
     if decrypt:
         cryptor =  AES.new(key, AES.MODE_CBC, key)
     with open(ts_path,"wb+") as file:
@@ -112,11 +116,12 @@ def merge_to_mp4(dest_file, source_path,ts_list, delete=False):
     if not os.path.exists(folderPath):
         os.makedirs(folderPath)
     with open(dest_file, 'wb') as fw:
-        for file in ts_list:
-            with open(source_path+"/"+file, 'rb') as fr:
+        for ts_name in ts_list:
+            file_name = fixLongFileName(ts_name)
+            with open(source_path+"/"+file_name, 'rb') as fr:
                 fw.write(fr.read())
             if delete:
-                os.remove(file)
+                os.remove(source_path+"/"+file_name)
     print("merge_to_mp4 {0} finished".format(dest_file))
 
 def main(*args):
@@ -217,7 +222,7 @@ def main(*args):
         else:
             ts_name = filename.uri
         ts_name_list.append(ts_name)
-        if not os.path.exists(os.path.join(down_path,ts_name)):
+        if not os.path.exists(os.path.join(down_path,fixLongFileName(ts_name))):
             unload_ts_info_list.append([filename.uri,ts_name])
     #开启线程池
     with concurrent.futures.ThreadPoolExecutor() as executor:
