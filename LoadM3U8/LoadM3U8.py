@@ -90,16 +90,19 @@ def download(ts_info,prefix_url,web_ip_url,decrypt,down_path,key):
     except Exception as e:
         print("error requests.get url:{0} exception:{1}".format(down_url,e))
         return
-    ts_path = down_path+"/{0}".format(fixLongFileName(filename))
+    fixFileName = fixLongFileName(filename)
+    ts_path = down_path+"/{0}".format(fixFileName)
+    temp_ts_path = down_path+"/{0}.temp".format(fixFileName)
     if decrypt:
         cryptor =  AES.new(key, AES.MODE_CBC, key)
-    with open(ts_path,"wb+") as file:
+    with open(temp_ts_path,"wb+") as file:
         for chunk in res.iter_content(chunk_size=1024):
             if chunk:
                 if decrypt:
                     file.write(cryptor.decrypt(chunk))
                 else:
                     file.write(chunk)
+    os.rename(temp_ts_path, ts_path)
     return down_url
     
 #合并ts文件
@@ -184,20 +187,26 @@ def main(*args):
     key = None
     #判断是否加密
     print("video.keys:",video.keys)
-    if len(video.keys) > 0 and video.keys[0] is not None:
-        method,key =getKey(video.keys[0],prefix_url,web_ip_url)
-        # 针对性特殊处理
-        if len(video.keys) == 2 and video.keys[1] is not None:
-            methodTemp,keyTemp = getKey(video.keys[1],prefix_url,web_ip_url)
-            if methodTemp is not None:
-                method = methodTemp
-                key = keyTemp
-        # 针对性特殊处理
-        print("video method:{0} key:{1}".format(method,key))
-        if method is not None:
-            decrypt = True
-    
-    
+    keysPath = down_path+"/_keys.txt"
+    if not os.path.exists(keysPath):
+        if len(video.keys) > 0 and video.keys[0] is not None:
+            method,key =getKey(video.keys[0],prefix_url,web_ip_url)
+            # 针对性特殊处理
+            if len(video.keys) == 2 and video.keys[1] is not None:
+                methodTemp,keyTemp = getKey(video.keys[1],prefix_url,web_ip_url)
+                if methodTemp is not None:
+                    method = methodTemp
+                    key = keyTemp
+            # 针对性特殊处理
+            print("video method:{0} key:{1}".format(method,key))
+            if method is not None:
+                decrypt = True
+                with open(keysPath,"wb+") as file:
+                    file.write(key)
+    else:
+        decrypt = True
+        with open(keysPath,"rw+") as file:
+            key = file.read()
     
     
     #ts列表
@@ -206,16 +215,27 @@ def main(*args):
     #把ts文件名添加到列表中
     total_ts_num = len(video.segments)
     ts_name="ts_name_none"
-    # for i in range(total_ts_num)
-     # 针对性特殊处理
+
     tempList = []
+    prefixURLMap = {}
+    prefixURL = ""
+    prefixURLCount = 0
+    filterPrefixURL = ""
+    prefixURLMaxCount = 0
     for i,filename in enumerate(video.segments):
-        #if reurl(filename.uri):
-           # continue
-        tempList.append(filename)
-    # for i in range(10):
-    #     tempList.pop()
-    # 针对性特殊处理
+        if reurl(filename.uri) or filename.uri[0] == "/":
+            prefixURL = filename.uri.rsplit("/", 1)[0]
+            prefixURLCount = prefixURLMap.get(prefixURL, 0)
+            prefixURLMap[prefixURL] = prefixURLCount + 1
+    for prefixURL,count in prefixURLMap.items():
+        print("prefixURL={0} count={1}".format(prefixURL, count))
+        if( prefixURLMaxCount < count ):
+            prefixURLMaxCount = count
+            filterPrefixURL = prefixURL
+    for i,filename in enumerate(video.segments):
+        if( filterPrefixURL == "" or filename.uri.find(filterPrefixURL) != -1 ):
+            tempList.append(filename)
+
     for i,filename in enumerate(tempList):
         if reurl(filename.uri) or filename.uri[0] == "/":
             ts_name = filename.uri.rsplit("/", 1)[1]
