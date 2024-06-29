@@ -16,6 +16,7 @@ ssl._create_default_https_context = ssl._create_unverified_context
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.82 Safari/537.36"
 }
+timeout = ()
 bForceHttp = False
 
 #防止ts名字过长
@@ -27,12 +28,33 @@ def fixLongFileName(filename):
 #正则表达判断是否为网站地址
 def reurl(url):
     pattern = re.compile(r'^((https|http|ftp|rtsp|mms)?:\/\/)[^\s]+')
+    if url is None:
+        return False
     m=pattern.search(url)
     if m is None:
         return False
     else:
         return True
- 
+
+#超时重连
+def send_request_get(url, max_retries, timeout):
+    retries = 0
+    print("get ",url)
+    if bForceHttp and url[:5] == "https":
+        print("change ts url protocol !!! https to http")
+        #url = url[:4] + url[5:]
+    while retries < max_retries:
+        try:
+            res = requests.get(url, stream=True, verify=False,headers=headers, timeout=timeout)
+            if res.status_code == 200:
+                return res
+        except requests.exceptions.Timeout :
+            print("requests.get url:{0} timeout , retries {1}".format(url,retries+1))
+        except Exception as e:
+            print("error requests.get url:{0} exception:{1}".format(url,e))
+        retries += 1
+    print("get url:{0} fail !!!".format(url))
+    return None
 #获取密钥
 def getKey(keystr,prefix_url,web_ip_url):
     keyinfo= str(keystr)
@@ -81,14 +103,8 @@ def download(ts_info,prefix_url,web_ip_url,decrypt,down_path,key):
             down_url = web_ip_url + ts_url
         else:
             down_url = prefix_url + "/" + ts_url
-    try:
-        print("get ",down_url)
-        if bForceHttp and down_url[:5] == "https":
-            print("change ts url protocol !!! https to http")
-            #down_url = down_url[:4] + down_url[5:]
-        res = requests.get(down_url, stream=True, verify=False,headers=headers)
-    except Exception as e:
-        print("error requests.get url:{0} exception:{1}".format(down_url,e))
+    res = send_request_get(down_url, 3, (30, 180))
+    if res is None:
         return
     fixFileName = fixLongFileName(filename)
     ts_path = down_path+"/{0}".format(fixFileName)
@@ -96,7 +112,7 @@ def download(ts_info,prefix_url,web_ip_url,decrypt,down_path,key):
     if decrypt:
         cryptor =  AES.new(key, AES.MODE_CBC, key)
     with open(temp_ts_path,"wb+") as file:
-        for chunk in res.iter_content(chunk_size=1024):
+        for chunk in res.iter_content(chunk_size=2048):
             if chunk:
                 if decrypt:
                     file.write(cryptor.decrypt(chunk))
@@ -164,16 +180,11 @@ def main(*args):
 
     m3u8Path = down_path+"/_index.m3u8"
     if not os.path.exists(m3u8Path):
-        try:
-            print("get m3u8=",url)
-            if bForceHttp and url[:5] == "https":
-                print("change m3u8 url protocol !!! https to http")
-                #url = url[:4] + url[5:]
-            res = requests.get(url, stream=True, verify=False,headers=headers)
-        except Exception as e:
-            print("error requests.get url:{0} exception:{1}".format(url,e))
+        print("get m3u8=",url)
+        res = send_request_get(url, 3, (30, 180))
+        if res is None:
+            print("Request m3u8 error !!!")
             return
-    
         with open(m3u8Path,"wb+") as file:
             for chunk in res.iter_content(chunk_size=1024):
                 if chunk:                
@@ -205,7 +216,7 @@ def main(*args):
                     file.write(key)
     else:
         decrypt = True
-        with open(keysPath,"rw+") as file:
+        with open(keysPath,"rb+") as file:
             key = file.read()
     
     
@@ -223,6 +234,8 @@ def main(*args):
     filterPrefixURL = ""
     prefixURLMaxCount = 0
     for i,filename in enumerate(video.segments):
+        if filename.uri is None:
+            continue
         if reurl(filename.uri) or filename.uri[0] == "/":
             prefixURL = filename.uri.rsplit("/", 1)[0]
             prefixURLCount = prefixURLMap.get(prefixURL, 0)
@@ -233,6 +246,8 @@ def main(*args):
             prefixURLMaxCount = count
             filterPrefixURL = prefixURL
     for i,filename in enumerate(video.segments):
+        if filename.uri is None:
+            continue
         if( filterPrefixURL == "" or filename.uri.find(filterPrefixURL) != -1 ):
             tempList.append(filename)
 
