@@ -21,17 +21,18 @@ def parserVideo(driver, urlList, url_title_map, manifest_path):
 			filename = href.split("/")[-1].split(".")[0]
 			play_url = href.replace(filename, "play_"+filename)
 			print("index:{0} url:{1}\t\t title:{2}".format(i,play_url,url_title_map[href]))
-			driver.get(play_url)
-			wait = WebDriverWait(driver, 600)
-			wait.until(EC.presence_of_element_located((By.TAG_NAME, "iframe")))
-			# print("source_code:",driver.page_source)
-			iframe = driver.find_element(By.TAG_NAME, "iframe")
-			src = iframe.get_attribute("src")
-			# print("video src:",src)
-			m3u8_url = src.split("=")[1]
-			web_url = m3u8_url[:8] + m3u8_url[8:].split("/",1)[0]
-			print("main_m3u8:{0} web_url:{1}".format(m3u8_url, web_url))
 			try:
+				driver.get(play_url)
+				wait = WebDriverWait(driver, 600)
+				wait.until(EC.presence_of_element_located((By.TAG_NAME, "iframe")))
+				# print("source_code:",driver.page_source)
+				iframe = driver.find_element(By.TAG_NAME, "iframe")
+				src = iframe.get_attribute("src")
+				# print("video src:",src)
+				m3u8_url = src.split("=")[1]
+				web_url = m3u8_url[:8] + m3u8_url[8:].split("/",1)[0]
+				print("main_m3u8:{0} web_url:{1}".format(m3u8_url, web_url))
+
 				main_m3u8 = m3u8.load(m3u8_url)
 				if len(main_m3u8.playlists) == 1:
 					media = main_m3u8.playlists[0]
