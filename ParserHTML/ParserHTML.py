@@ -16,38 +16,41 @@ from selenium.webdriver.support import expected_conditions as EC
 def parserVideo(driver, urlList, url_title_map, manifest_path):
 	print("++++++++	parserVideo ++++++++++")
 	url_m3u8_map = {}
-	for i, href in enumerate(urlList):
-		filename = href.split("/")[-1].split(".")[0]
-		play_url = href.replace(filename, "play_"+filename)
-		print("index:{0} url:{1}\t\t title:{2}".format(i,play_url,url_title_map[href]))
-		driver.get(play_url)
-		wait = WebDriverWait(driver, 600)
-		wait.until(EC.presence_of_element_located((By.TAG_NAME, "iframe")))
-		# print("source_code:",driver.page_source)
-		iframe = driver.find_element(By.TAG_NAME, "iframe")
-		src = iframe.get_attribute("src")
-		# print("video src:",src)
-		m3u8_url = src.split("=")[1]
-		web_url = m3u8_url[:8] + m3u8_url[8:].split("/",1)[0]
-		print("main_m3u8:{0} web_url:{1}".format(m3u8_url, web_url))
-		main_m3u8 = m3u8.load(m3u8_url)
-		if len(main_m3u8.playlists) == 1:
-			media = main_m3u8.playlists[0]
-			# print("media:{0} stream_info:{1} absolute_uri:{2}".format(media,media.stream_info,media.absolute_uri))
-			url_m3u8_map[href] = media.absolute_uri
-			print("video m3u8:", media.absolute_uri)
-		else:
-			print("error: main m3u8 playlists length > 1, playlists:", main_m3u8.playlists)
-
 	with open(manifest_path,"a+", encoding="utf-8") as file:
 		for i, href in enumerate(urlList):
 			filename = href.split("/")[-1].split(".")[0]
+			play_url = href.replace(filename, "play_"+filename)
+			print("index:{0} url:{1}\t\t title:{2}".format(i,play_url,url_title_map[href]))
+			driver.get(play_url)
+			wait = WebDriverWait(driver, 600)
+			wait.until(EC.presence_of_element_located((By.TAG_NAME, "iframe")))
+			# print("source_code:",driver.page_source)
+			iframe = driver.find_element(By.TAG_NAME, "iframe")
+			src = iframe.get_attribute("src")
+			# print("video src:",src)
+			m3u8_url = src.split("=")[1]
+			web_url = m3u8_url[:8] + m3u8_url[8:].split("/",1)[0]
+			print("main_m3u8:{0} web_url:{1}".format(m3u8_url, web_url))
+			try:
+				main_m3u8 = m3u8.load(m3u8_url)
+				if len(main_m3u8.playlists) == 1:
+					media = main_m3u8.playlists[0]
+					# print("media:{0} stream_info:{1} absolute_uri:{2}".format(media,media.stream_info,media.absolute_uri))
+					url_m3u8_map[href] = media.absolute_uri
+					print("video m3u8:", media.absolute_uri)
+				else:
+					print("error: main m3u8 playlists length > 1, playlists:", main_m3u8.playlists)
+			except Exception as e:
+				print("load m3u8 failed !!! url:",m3u8_url)
 			m3u8_str = ""
 			m3u8_url = url_m3u8_map.get(href, None)
 			if m3u8_url != None:
 				m3u8_str = "{0}\tout\\{1}.mp4\t2".format(m3u8_url, filename)
 			file.write("{0}\t\t<{1}>\n{2}\n".format(href,url_title_map[href],m3u8_str))
+			file.flush()
 
+def scan_page():
+        print("todo scan_page")
 def main(*args):
 	print("args:",*args)
 	print("cwd:",os.getcwd())
