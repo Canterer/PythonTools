@@ -1,0 +1,1 @@
+@rem start  /min cmd /k  AutoRun.bat
