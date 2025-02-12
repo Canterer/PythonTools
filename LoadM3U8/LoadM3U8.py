@@ -131,7 +131,9 @@ def merge_to_mp4(dest_file, source_path,ts_list, delete=False):
     if len(files)!=len(ts_list):
         print("文件不完整！{0}!={1}".format(len(files),len(ts_list)))
         return
+    dest_file = os.path.join("D:/FFmpeg/",dest_file)# 修改为临时存放地址
     folderPath = os.path.dirname(dest_file)
+    print("folderPath:",folderPath)
     if not os.path.exists(folderPath):
         os.makedirs(folderPath)
     with open(dest_file, 'wb') as fw:
