@@ -126,7 +126,7 @@ def download(ts_info,prefix_url,web_ip_url,decrypt,down_path,key):
 #source_path:ts文件目录
 #ts_list:文件列表
 #delete:合成结束是否删除ts文件   
-def merge_to_mp4(dest_file, source_path,ts_list, delete=False):
+def merge_to_mp4(dest_file, source_path,ts_list, delete, merge_flag):
     files = glob.glob(source_path + '/*.ts')
     if len(files)!=len(ts_list):
         print("文件不完整！{0}!={1}".format(len(files),len(ts_list)))
@@ -136,6 +136,9 @@ def merge_to_mp4(dest_file, source_path,ts_list, delete=False):
     print("folderPath:",folderPath)
     if not os.path.exists(folderPath):
         os.makedirs(folderPath)
+    if merge_flag == False and os.path.exists(dest_file):
+        print("merge_to_mp4 {0} is exists!!! skip".format(dest_file))
+        return
     with open(dest_file, 'wb') as fw:
         for ts_name in ts_list:
             file_name = fixLongFileName(ts_name)
@@ -277,7 +280,8 @@ def main(*args):
         for future in as_completed(obj_list):
             ts_count = ts_count + 1
             print("progress {0}%  Current/Total = {1}/{2} \n\t{3}".format(round(ts_count/unload_ts_num*100, 1),ts_count,unload_ts_num,future.result()))
-    merge_to_mp4(out_file_name, down_path, ts_name_list, delete_ts_flag)#合并ts文件
+
+    merge_to_mp4(out_file_name, down_path, ts_name_list, delete_ts_flag, len(unload_ts_info_list)!=0)#合并ts文件
     # # times = time.time() - begin #记录线程完成时间
     # # print(times)
 
