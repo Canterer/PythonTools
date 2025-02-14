@@ -1,0 +1,25 @@
+#List:[left:LeftContainer:Left,...]#按钮变量名:资源名:可省回调函数名(等同首字母大小的变量名)  "..."会被忽视
+# 注意rule仅insertCode、insertFunc,	插入Code序号在表达式列表最后
+insertCode:[InitUI:0]#特定函数名:插入Code序号
+
+	insertFunc:[Init(.*)?List:1]#同类函数:插入Code序号
+	insertFunc:[Update(.*)?List:2]#同类函数:插入Code序号
+
+
+
+
+#注意CodeList之后空白符会被读取
+CodeList:#<0>对应Btn:[<0>:<1>:...]中的值
+0:
+	self.<0>List = self:Wnd("<1>")
+1:
+function xxxxMainView:Init<2>List()
+	self.<0>DataList = {}
+end
+
+2:
+function xxxxMainView:Update<2>List(dataList)
+	self.<0>List:Update(dataList)
+end
+
+#上一行属于插入代码  用于间隔各个函数

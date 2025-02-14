@@ -1,0 +1,8 @@
+ModelName:[MainView:TestModel:xxxmainview:xxx]#模板名:替换关键字:模块文件名:文件夹名
+#ComponentRoot:frontend.xxx.component
+#Component:[characterdata]#包含的组件
+Btn:[cancle:CancleBtn:Cancle,sure:SureBtn:Sure]#按钮变量名:资源名:可省回调函数名(等同首字母大小的变量名)  "..."会被忽视
+List:[left:LeftContainer:Left,right:RightContainer:Right]
+#Tab:[tabGroup:XXXMainTab_:5:{tabText = "全部",tabIcon = nil}]#变量名:资源名格式:页签数量:数据格式
+#ComponentList:[characterdata,...]#所有组件文件名
+#	:[CharacterDataChange:OnUpdateCharacterData:角色列表更新]#:事件名:回调函数名:可选注释

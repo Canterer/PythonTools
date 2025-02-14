@@ -1,0 +1,129 @@
+
+
+	1. json格式的规则定义 所有的数据都是字符串
+	2. Value("typeName","value"=input)--将value转换成typeName类型并返回
+	3. CheckType("typeName","value"=input)--返回是否可转换为类型
+	4. 绑定函数参数  BindValue,BindFuncArg
+		BindValue("valueName","value"=input)--绑定全局变量的值
+		BindFuncArg("FuncName","ArgName","value"=input)
+
+	基本接口
+	"BindArg" : ["OpName","ArgName","DefaultValue","value"=input]绑定函数参数
+	Sequeue:["valueName","1","2",...]//序列
+	Assign:["valueName","value"=input]//分配
+	Branch:["valueName","bool"=input]//创建一个名为valueName的分支
+
+	操作符 没有名字(按运行逻辑编写规则的话)
+	Less:["valueName","Left","Right"]
+	And Or//condition
+	Equal Less Greater//condition
+
+	"Number" : ["input"],//返回字符串转换的数字
+	"Boolean" : ["input"],//返回字符串转换的布尔值
+	"List":: ["input"],//返回字符串转换的列表
+	"List_Append":["valueName","element"]
+	"GetValue":["input"],//返回变量名的值(该值可以为一个表达式)
+	"GetFuncValue":["funcName","funcLocalName"]
+	"SetReturn:["value"=input]"
+	"CSVData":["CSVIndex","valueKey"]//返回CSV对应字段的行数据
+*/
+{
+	//			[3,"  ","GetRow",3,"max_level","Range","max"],
+//			["Number","1","Range","min"],
+//			["Range","List_Merge_MemberOfList","inputB"],
+//			["3","talent_id","List_Merge_MemberOfList","inputA"],
+//			["List_Merge_MemberOfList","4":["talent_id","talent_lev"]]
+
+	GetRowData: 获取当前数据所在行的数据列表
+	GetColData: 获取当前数据所在列的数据列表
+
+	For:["initSequeue","conditionSequeue","deltaSequeue","loopSequeue"]
+		initSequeue,conditionSequeue,Branch:["temp"]
+		Branch["temp"]:True,loopSequeue,deltaSequeue,conditionSequeue
+		//Branch["temp"]:False
+
+	ForLoop:[i,max,delta,loopSequeue,localValueName]
+		Sequeue:["initSequeue",1],GetValue:["i"],Assign:["localValueName"]
+		GetValue:["initSequeue"],BindArg:["For","initSequeue"]
+
+		GetValue:["i"],Less:["Left"]
+		GetValue:["delta"],Less:["Right"]
+		Sequeue:["conditionSequeue",1],Less:["Result"]
+		GetValue:["conditionSequeue"] ->BindArg:["For","conditionSequeue"]
+		
+		
+		GetValue:["i"],Add:["Left"]
+		GetValue:["delta"],Add:["Right"]
+		Sequeue:["deltaSequeue",1],Add:["Result"],Assign:["i"]
+		GetValue:["deltaSequeue"] ->BindArg:["For","deltaSequeue"]
+
+}
+ 
+
+
+
+
+
+结点类型：
+		BaseNode基本结点、其它结点的父类
+
+		ValueNode主要用于存放数值
+		OperateNode操作结点，用于逻辑表达式
+		数值类结点只有取值才会触发逻辑
+
+		CalculateNode基本逻辑结点 其子类是代码定义的
+		Composite复杂逻辑结点 对应于函数 其函数体采用规则表定义 使用其它结点组合逻辑主体
+		逻辑类结点只有运行才会触发逻辑
+
+BaseNode=> 每个结点具有两个关键字 nodeName结点名,对应规则关键字(一般就是类型或可寻址到类名)
+								instanceName实例名 该结点的实例对象名,用于寻址
+		每个结点三类数据：参数列表、返回值列表、句柄列表(指向一个运行逻辑)
+
+		返回值定义后初始化存放NodeSlot对象
+		参数列表绑定的是NodeSlot对象
+		因为参数绑定的都是数值类结点,数值类结点需要在运行时取值
+
+规则解析核心函数：
+		GetNodeInsByRule(nodeName, keyWord)用于返回结点实例对象
+			内部会更加nodeName获取类,并更加类的getInsMoveStepByRule(keyWord)判断实例名
+
+		getInsMoveStepByRule(cls, keyWord)控制实例名的判断规则
+
+		getFieldByRule(self, fieldNameList, moveStep = 0)判断关键字的读取逻辑,控制规则读取的前进步数
+
+结点间关系：Bind(绑定)、Link(链接)
+		绑定用于某个结点的参数绑定某个结点的某个返回值
+		链接用于某个结点的句柄绑定另一个结点
+
+
+关键函数：
+		initRetsNodeSlot()初始化返回值NodeSlot用于参数绑定 由于传递返回值列表时机不定,所以得手动在其后触发
+		bindArgNodeSlot(self, fieldName, nodeSlot)
+		bindReturnValue(self, fieldName, value)用于绑定返回值结果
+		NodeSlot用于在结点未绑定返回值的情况下,被其它结点用于绑定参数
+		linkNodeField(self, fieldName, nextNode)用于绑定不同的分支流程
+
+		initLocalArgs()主要用于函数,方便函数体内逻辑获取参数的实参
+		传参两种：传值、传引
+				getLocalArgPointer()对应传引用
+
+		calculate()定义逻辑计算主体
+
+
+ValueNode
+		setValue()将数据绑定到返回值
+		getValue()数值类的逻辑主体 读取返回值并返回
+		一般简单的数值类逻辑主体比较简单 直接放在getValue()里实现
+OperateNode
+		为啥逻辑主体在 calculate里？ 为了便于理解
+		实际上 getValue()里触发run()而间接触发calculate
+
+CalculateNode 作为逻辑类的基类
+		初始化参数包含了 参数列表、返回值列表、句柄列表
+		并其数据采用了对象保存列表数据，而不是一般类的方式
+		其重写覆盖了基类的参数列表、返回值列表、句柄列表的相关接口
+
+
+Composite 函数
+		实例名对应关键字
+		内部包含开始结点、结束结点

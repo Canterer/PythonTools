@@ -1,0 +1,2494 @@
+BaseNode.py
+import os
+import re
+import csv
+# from ..main import GetNodeInsByRule
+	# 规则定义
+	# NodeIns = NodeName、InstanceName 可省略InstanceName
+	# NodeSlot = NodeIns、Field 返回值
+	# NodeIns、Field代表参数、句柄
+	# NodeIns、Field、[Bind|Link]、NodeIns
+	# A节点返回值绑定B节点参数
+	# A节点句柄绑定B节点
+LogTag = 0
+LogLimitList = [
+	# "Equal",
+	# "Print",
+	# "Equal",
+]
+def Log(logStr=""):
+	flag = False
+	for i,limitStr in enumerate(LogLimitList):
+		if re.match(limitStr, logStr):
+			flag = True
+			break
+	if LogLimitList and not flag:
+		return
+
+	global LogTag
+	LogTag = (LogTag + 1)%10
+	print("{0}\n{1}\n{0}".format(str(LogTag)*20,logStr))
+
+
+# 遗留问题
+# 多参数初始化问题(子类重复定义argsNum来获取规则关键字+自定义函数进行初始化)
+
+# 多参数初始化就是  辨别Node以及获取对应的关键字
+#  Bink等特殊关键字怎么排除？？ 包含特殊关键字的结点(其不可省略Field)
+
+# 子类的初始化参数不同 如何统一？？？？
+# 标识每一个结点的必要参数信息  必然在规则中不会缺失(准确指明一个结点必然具备必要参数)
+
+# 绑定结点的返回字段 用于初始化其它结点的参数
+# 在函数还未运行时,就可以绑定返回字段
+class NodeSlot:#用于获取或绑定结点返回值
+	def __init__(self, node, field = "Result"):
+		self.node = node
+		self.field = field
+
+	def getValue(self):
+		# print("getNodeSlotValue node:{0} value:{1}".format(self.node,self.node.getValue(self.field)))
+		return self.node.getValue(self.field)
+
+class BaseNode:
+	SubNodeInsDic = {}# 存储各子类实例化对象字典  以NodeName为key
+
+	# 解析规则使用
+	subNodeClassDic = {}# 记录规则的关键字段对应类名
+	localFuncValueDicStack = []#函数的局部变量字典栈
+
+	# 子类的初始化参数必须保持一致 nodeName、instanceName就可以标识唯一结点了 
+	# 规则中两字段标识结点也简洁
+	def __init__(self,nodeName,instanceName):
+		self.nodeName = nodeName#结点名字对应类名 不是实例名  用于规则的关键字判断
+		self.instanceName = instanceName# 实例化对象序号
+		self.initNodeInstance()
+
+		# 参数和返回值 通过绑定NodeSlot对象
+		# NodeSlot对象是为了绑定结点间数据关系(未能取值的时候先绑定关系)
+		self.argNodeSlotDic = {}#指向一个NodeSlot对象
+		self.returnNodeSlotDic = {}#初始化维持一个NodeSlot对象
+		self.retValueDic = {}#记录返回值
+		self.handleLinkNodeDic = {}#指向一个实例结点
+
+		self.localValueDic = {}#局部变量字典  存放实参及内部局部变量
+		#函数内采用封闭作用域  没有全局变量节点的概念
+
+		self.moveStep = 0#对应的前进步数 对应规则读取数据的实际消耗  为实现默认参数
+
+	def __repr__(self):
+		return "nodeName:{0} instanceName:{1}".format(self.nodeName,self.instanceName)
+		# return "\nnodeName:{0} instanceName:{1} \n----> argsList:{2} \n----> retsList:{3} \n----> handlesList:{4}".format(
+		# 	self.nodeName,self.instanceName,
+		# 	self.getArgsList(),self.getRetsList(),self.getHandlesList(),
+		# )
+
+	# 子类实例化时记录实例对象
+	def initNodeInstance(self):
+		# print("initNodeInstance", self.nodeName, self.instanceName)
+		insDic = BaseNode.SubNodeInsDic.setdefault(self.nodeName, {})
+		insDic[self.instanceName] = self
+
+	@staticmethod
+	def getNodeInstance(nodeName, instanceName):
+		insDic = BaseNode.SubNodeInsDic.get(nodeName, {})
+		return insDic.get(instanceName, None)
+
+	# @classmethod
+	# def getInstanceName(cls):
+	# 	return BaseNode.SubNodeInsIndex.setdefault(cls.nodeName, 0)
+
+	@staticmethod
+	def pushFuncLocalDic(funcNode):
+		BaseNode.localFuncValueDicStack.append(funcNode.localValueDic)
+
+	@staticmethod
+	def popFuncLocalDic():
+		return BaseNode.localFuncValueDicStack.pop()
+
+	@staticmethod
+	def getFuncLocalDic():
+		return {}
+		# return BaseNode.localFuncValueDicStack[-1]
+
+	@classmethod
+	def setArgsList(cls, argsList):
+		if type(argsList) is list:
+			cls.argsList = argsList
+		else:
+			cls.argsList = []
+
+	@classmethod
+	def getArgsList(cls):
+		if hasattr(cls, "argsList") is False:
+			cls.argsList = []
+		return cls.argsList
+
+	def getArgNodeSlot(self, fieldName):
+		if fieldName in self.argsList:
+			return self.argNodeSlotDic.get(fieldName)
+
+	def getArgValue(self, fieldName):
+		if fieldName in self.argsList:
+			nodeSlot = self.argNodeSlotDic.get(fieldName)
+			if nodeSlot:
+				return nodeSlot.getValue()
+
+	def bindArgNodeSlot(self, fieldName, nodeSlot):
+		self.argNodeSlotDic[fieldName] = nodeSlot
+
+	def getLocalValue(self, fieldName):
+		return self.localValueDic.get(fieldName)
+
+	def getLocalArgPointer(self, fieldName):
+		nodeSlot = self.getArgNodeSlot(fieldName)
+		if nodeSlot:
+			return nodeSlot.node
+
+	@classmethod
+	def setRetsList(cls, retsList):
+		if type(retsList) is list:
+			cls.retsList = retsList
+		else:
+			cls.retsList = []
+
+	@classmethod
+	def getRetsList(cls):
+		if hasattr(cls, "retsList") is False:
+			cls.retsList = []
+		return cls.retsList
+
+	def initRetsNodeSlot(self):
+		for fieldName in self.retsList:
+			self.returnNodeSlotDic[fieldName] = NodeSlot(self, fieldName)
+
+	def getRetNodeSlot(self, fieldName):
+		if fieldName in self.retsList:
+			return self.returnNodeSlotDic.get(fieldName)
+
+	# 返回值 在函数结束时保存在函数实例中 随调用而改变
+	# 需要使用该次调用的返回值 只需要在下次调用前取出数据并保存
+	def getReturnValue(self, fieldName):
+		# print("getReturnValue nodeName:{0} fieldName:{1} value:{2}".format(self.nodeName, fieldName, self.retValueDic.get(fieldName, None)))
+		return self.retValueDic.get(fieldName, None)
+
+	# 暂时没有好的调用逻辑及顺序
+	def bindReturnValue(self, fieldName, value):
+		# print("bindReturnValue nodeName:{0} fieldName:{1} value:{2}".format(self.nodeName, fieldName, value))
+		self.retValueDic[fieldName] = value
+
+	@classmethod
+	def setHandlesList(cls, handlesList):
+		if type(handlesList) is list:
+			cls.handlesList = handlesList
+		else:
+			cls.handlesList = []
+
+	@classmethod
+	def getHandlesList(cls):
+		if hasattr(cls, "handlesList") is False:
+			cls.handlesList = []
+		return cls.handlesList
+
+	def getHandleLinkNode(self, fieldName):
+		if fieldName in self.handlesList:
+			return self.handleLinkNodeDic.get(fieldName)
+
+	def linkNodeFiled(self, fieldName, nextNode):
+		self.handleLinkNodeDic[fieldName] = nextNode
+
+	# -- 在getInsMoveStepByRule及getFieldByRule中分别定义消耗的次数
+	def setMoveStep(self, moveStep):
+		self.moveStep = moveStep
+
+	def getMoveStep(self):
+		return self.moveStep
+
+	# 各个子类重定义
+	@classmethod
+	def getInsMoveStepByRule(cls, keyWord):
+		moveStep = 0
+		if type(keyWord) is int:#默认实例名必须为数字 为了区分
+			moveStep = 1
+		return moveStep
+
+	# 各个子类重定义
+	# 根据各子类的实例名初始化逻辑  获取字段进行初始化
+	# 根据实际使用逻辑修改该对象的数据
+	def getFieldByRule(self, fieldNameList, moveStep = 0):
+		if fieldNameList is None:
+			return self.getDefaultFieldName()
+		fieldName = fieldNameList[0]
+		argsList = self.getArgsList()
+		retsList = self.getRetsList()
+		handlesList = self.getHandlesList()
+		if (fieldName in argsList) or (fieldName in retsList) or (fieldName in handlesList):
+			self.setMoveStep(moveStep+1)
+			return fieldName
+		else:
+			self.setMoveStep(moveStep)
+			return self.getDefaultFieldName()
+
+	def getDefaultFieldName(self):
+		return "Result"
+
+	def initLocalArgs(self):
+		for argName in self.getArgsList():
+			# print("nodeName:{0} instanceName:{1} initLocalArgs argName:{2}".format(self.nodeName, self.instanceName, argName))
+			argNodeSlot = self.getArgNodeSlot(argName)
+			if argNodeSlot:
+				self.localValueDic[argName] = argNodeSlot.getValue()
+			else:
+				print("argName is not bind NodeSlot")
+
+	# 各个子类重定义
+	# 主体逻辑及绑定存放返回值
+	def calculate(self):
+		# self.getLocalValue(fieldName)#获取实参
+		# self.bindReturnValue(fieldName, value)#绑定返回值
+		pass
+
+	# 定义结点后续
+	def runNext(self):
+		nextNode = self.getHandleLinkNode("Next")
+		if nextNode:
+			nextNode.run()
+
+	def run(self):
+		self.initLocalArgs()#实参初始化
+		self.calculate()#运行主体逻辑及绑定存放返回值
+		self.runNext()
+
+	def WaitBind(self, fieldNameList, node):
+		self.fieldNameList = fieldNameList
+		self.waitNode = node
+
+	def SetBind(self, fieldName):
+		if fieldName in self.fieldNameList:
+			self.fieldNameList.remove(fieldName)
+			if not self.fieldNameList:
+				self.waitNode.run()
+
+	@staticmethod
+	def RunNextNode():
+		if BaseNode.nextNode:
+			BaseNode.nextNode.run()
+
+	@staticmethod
+	def setRunNextNode(nextNode):
+		BaseNode.nextNode = nextNode
+
+
+class ValueNode(BaseNode):
+	'''局部变量 全局变量 表达式'''
+	def __init__(self, valueType, valueName):
+		print("ValueNode valueType:{0} valueName:{1}".format(valueType, valueName))
+		# BaseNode.subNodeClassDic.setdefault(valueType, ValueNode)
+		super(ValueNode, self).__init__(valueType, valueName)#结点类型名
+		ValueNode.setArgsList([])
+		ValueNode.setRetsList(["Result"])
+		ValueNode.setHandlesList([])
+		self.initRetsNodeSlot()
+
+	def setValue(self, value):
+		fieldName = self.getDefaultFieldName()
+		self.bindReturnValue(fieldName, value)
+
+	# 各个子类重定义
+	def getValue(self, fieldName=None):
+		if fieldName is None:
+			fieldName = self.getDefaultFieldName()
+		elif fieldName != "Result":
+			print("ValueNode getValue(fieldName={0}) is error! fieldName need be Result".format(fieldName))
+		return self.getReturnValue(fieldName)
+
+	# # 数值结点 获取返回值结果 是取值时运算逻辑
+	# def calculate(self):
+	# 	self.setValue(None)#绑定返回值
+
+# 表达式
+class OperateNode(ValueNode):
+	'''操作节点  其值在取值时进行计算'''
+	'''蓝图取值之前 对该值的计算不像程序语言那样 在定义处运行  而是在取值时再计算'''
+	# argsNum = 2#操作结点操作数一致   instanceId、Field
+	def __init__(self, operateType,instanceId=None):
+		BaseNode.subNodeClassDic.setdefault(operateType, OperateNode)
+		# 直接调用ValueNode的父类BaseNode  不调用ValueNode的__init__方法
+		super(ValueNode, self).__init__(operateType,instanceId)#结点类型名
+		OperateNode.setArgsList(["Left","Right"])#暂定操作参数为两个
+		OperateNode.setRetsList(["Result"])
+		OperateNode.setHandlesList([])
+		self.initRetsNodeSlot()
+		self.operateType = operateType# 枚举操作类型
+
+		# 各个子类重定义
+	def getValue(self,fieldName=None):
+		if fieldName is None:
+			fieldName = self.getDefaultFieldName()
+		elif fieldName != "Result":
+			print("Error")
+		self.run()#取值时重新运算逻辑
+		return self.getReturnValue(fieldName)
+
+	def calculate(self):
+		# print("OperateNode",self)
+		if self.operateType == "Add":
+			l = self.getArgValue("Left")
+			r = self.getArgValue("Right")
+			self.setValue(l + r)
+		elif self.operateType == "Not":
+			l = self.getArgValue("Left")
+			self.setValue(not l)
+		elif self.operateType == "And":
+			l = self.getArgValue("Left")
+			r = self.getArgValue("Right")
+			self.setValue(l and r)
+		elif self.operateType == "Equal":
+			l = self.getArgValue("Left")
+			r = self.getArgValue("Right")
+			# Log("Equal instanceName:{2} l:{0} r:{1}".format(l,r,self.instanceName))
+			self.setValue(l == r)
+		elif self.operateType == "Less":
+			l = self.getArgValue("Left")
+			r = self.getArgValue("Right")
+			self.setValue(l < r)
+
+class CalculateNode(BaseNode):
+	def __init__(self, nodeName, valueName, argsList=[],retsList=[],handlesList=[]):
+		# argsList, retsList, handlesList三个参数由规则定义
+		# print("CalculateNode nodeName:{0} valueName:{1}".format(nodeName, valueName))
+		# if nodeName is None:#动态参数节点
+		# print("nodeName is None")
+		super(CalculateNode, self).__init__(nodeName,valueName)#结点类型名
+		self.setArgsList(argsList)
+		self.setRetsList(retsList)
+		self.setHandlesList(handlesList)
+		self.initRetsNodeSlot()
+		# else:#特定类(固定参数)的节点
+		# 	print("nodeName is not None:{0}".format(nodeName))
+		# 	super(CalculateNode, self).__init__(nodeName,valueName)#结点类型名
+		# 	print("globals()[nodeName={0}]:{1}".format(nodeName, globals()[nodeName]))
+		# 	globals()[nodeName].setArgsList(argsList)
+		# 	globals()[nodeName].setRetsList(retsList)
+		# 	globals()[nodeName].setHandlesList(handlesList)
+		# pass
+
+	#重载设置参数、返回值、句柄等列表  将数据下放到实例对象
+	def setArgsList(self, argsList):
+		if type(argsList) is list:
+			self.argsList = argsList
+		else:
+			self.argsList = []
+
+	def getArgsList(self):
+		if hasattr(self, "argsList") is False:
+			self.argsList = []
+		return self.argsList
+
+	def setRetsList(self, retsList):
+		if type(retsList) is list:
+			self.retsList = retsList
+		else:
+			self.retsList = []
+
+	def getRetsList(self):
+		if hasattr(self, "retsList") is False:
+			self.retsList = []
+		return self.retsList
+
+	def setHandlesList(self, handlesList):
+		if type(handlesList) is list:
+			self.handlesList = handlesList
+		else:
+			self.handlesList = []
+
+	def getHandlesList(self):
+		if hasattr(self, "handlesList") is False:
+			self.handlesList = []
+		return self.handlesList
+
+	@classmethod
+	def getInsMoveStepByRule(cls, keyWord):
+		return 1
+
+	def getValue(self, fieldName):
+		return self.getReturnValue(fieldName)
+
+# 复合节点  对应函数
+# 局部变量仅在函数内部有意义
+# 函数进入和退出 设置局部变量栈序号
+class Composite(CalculateNode):
+	def __init__(self, valueName, instanceName, argsList=[],retsList=[],handlesList=[]):
+		BaseNode.subNodeClassDic.setdefault(valueName, self)
+		print("Composite valueName:{0} instanceName:{1}".format(valueName, instanceName))
+		super(Composite, self).__init__(valueName,instanceName,argsList,retsList,handlesList)
+
+		self.startNode = CalculateNode("CalculateNode","startNode",["Test"],argsList,["Next"])
+		self.endNode = CalculateNode("CalculateNode","endNode",retsList,[],handlesList)
+		# print("startNode",self.startNode)
+		# print("endNode",self.endNode)
+
+	@staticmethod
+	def LinkStartNode(nodeName, instanceName=None):
+		rule = ["CalculateNode","startNode","Next","Link"]
+		rule.append(nodeName)
+		if instanceName:
+			rule.append(instanceName)
+		return rule
+
+	@staticmethod
+	def LinkEndNode(nodeName, instanceName=None, fieldName=None):
+		rule = []
+		rule.append(nodeName)
+		if instanceName:
+			rule.append(instanceName)
+		if fieldName:
+			rule.append(fieldName)
+		rule.extend(["Link","CalculateNode","endNode"])
+		return rule
+
+	def calculate(self):
+		for fieldName in self.getArgsList():#函数实参初始化
+			self.startNode.bindReturnValue(fieldName, self.getLocalValue(fieldName))
+		for fieldName in self.getHandlesList():#函数句柄初始化
+			self.endNode.linkNodeFiled(fieldName, self.getHandleLinkNode(fieldName))
+		self.startNode.run()#运行函数主体逻辑
+		for fieldName in self.getRetsList():
+			self.bindRetValueNode(fieldName, self.endNode.getLocalValue(fieldName))
+
+# 局部变量仅在函数内部有意义
+class LocalValue(ValueNode):
+	def __init__(self, valueType, valueName):
+		# print("LocalValue:{0} init".format(valueName))
+		if valueType != "LocalValue":
+			print("LocalValue(valueType={0},value={1}), valueType ~= 'String'".format(valueType,value))
+			valueType = "LocalValue"
+		super(LocalValue, self).__init__(valueType,valueName)#结点类型名
+
+	@classmethod
+	def getInsMoveStepByRule(cls, keyWord):
+		return 1
+
+	def setValue(self, value):
+		# localValueDic = BaseNode.getFuncLocalDic()
+		# if localValueDic.get(self.instanceName) is not None:
+		# 	print("LocalValue valueName:{0} is exsit!!! valueName may be argName")
+		# localValueDic.setdefault(self.instanceName, value)
+		self.bindReturnValue("Result", value)
+
+# 字面量 名字为其值
+class String(ValueNode):
+	def __init__(self, valueType, value):
+		if valueType != "String":
+			print("String(valueType={0},value={1}), valueType ~= 'String'".format(valueType,value))
+			valueType = "String"
+		super(String, self).__init__(valueType, value)
+
+	@classmethod
+	def getInsMoveStepByRule(cls, keyWord):
+		return 1
+
+	def getFieldByRule(self, fieldNameList):
+		self.bindReturnValue("Result", str(self.instanceName))
+		return ValueNode.getFieldByRule(self, fieldNameList)
+
+	def setValue(self, value):
+		print("String is literal, can't setValue value:{0}".format(value))
+
+class Int(ValueNode):
+	def __init__(self, valueType, value):
+		# print("Int init:{0}".format(value))
+		if valueType != "Int":
+			print("Int(valueType={0},value={1}), valueType ~= 'Int'".format(valueType,value))
+			valueType = "Int"
+		super(Int, self).__init__(valueType, value)
+
+	# 默认实例名就是数字 该函数可省略重载
+	@classmethod
+	def getInsMoveStepByRule(cls, keyWord):
+		return 1
+
+	def getFieldByRule(self, fieldNameList):
+		self.bindReturnValue("Result", int(self.instanceName))
+		return ValueNode.getFieldByRule(self, fieldNameList)
+
+	def setValue(self, value):
+		print("Int is literal, can't setValue value:{0}".format(value))
+
+class List(ValueNode):
+	def __init__(self, valueType, value):
+		if valueType != "List":
+			print("List(valueType={0},value={1}), valueType ~= 'List'".format(valueType,value))
+			valueType = "List"
+		super(List, self).__init__(valueType, value)
+		self.bindReturnValue("Result", [])
+
+	@classmethod
+	def getInsMoveStepByRule(cls, keyWord):
+		moveStep = 0
+		if type(keyWord) is int:#默认实例名必须为数字 为了区分
+			moveStep = 1
+		return moveStep
+
+	def getFieldByRule(self, fieldNameList):
+		num = self.instanceName
+		dataList =  []
+		for i in range(0,num):
+			dataList.append(fieldNameList[i])
+		self.bindReturnValue("Result", dataList)
+		return ValueNode.getFieldByRule(self, fieldNameList[num:], num)
+
+	def setValue(self, value):
+		print("List is literal, can't setValue value:{0}".format(value))
+
+def main(*args,**kwargs):
+	pass
+
+# if __name__ == "__main__":
+# 	main()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+BaseNode_T.py
+import os
+import re
+import csv
+# from ..main import GetNodeInsByRule
+	# 规则定义
+	# NodeIns = NodeName、InstanceName 可省略InstanceName
+	# NodeSlot = NodeIns、Field 返回值
+	# NodeIns、Field代表参数、句柄
+	# NodeIns、Field、[Bind|Link]、NodeIns
+	# A节点返回值绑定B节点参数
+	# A节点句柄绑定B节点
+LogTag = 0
+LogLimitList = [
+	# "Equal",
+	# "Print",
+	# "Equal",
+]
+def Log(logStr=""):
+	flag = False
+	for i,limitStr in enumerate(LogLimitList):
+		if re.match(limitStr, logStr):
+			flag = True
+			break
+	if LogLimitList and not flag:
+		return
+
+	global LogTag
+	LogTag = (LogTag + 1)%10
+	print("{0}\n{1}\n{0}".format(str(LogTag)*20,logStr))
+
+
+# 遗留问题
+# 多参数初始化问题(子类重复定义argsNum来获取规则关键字+自定义函数进行初始化)
+
+# 多参数初始化就是  辨别Node以及获取对应的关键字
+#  Bink等特殊关键字怎么排除？？ 包含特殊关键字的结点(其不可省略Field)
+
+# 子类的初始化参数不同 如何统一？？？？
+# 标识每一个结点的必要参数信息  必然在规则中不会缺失(准确指明一个结点必然具备必要参数)
+
+# 绑定结点的返回字段 用于初始化其它结点的参数
+# 在函数还未运行时,就可以绑定返回字段
+class NodeSlot:#用于获取或绑定结点返回值
+	def __init__(self, node, field = "Result"):
+		self.node = node
+		self.field = field
+
+	def getValue(self):
+		# print("getNodeSlotValue node:{0} value:{1}".format(self.node,self.node.getValue(self.field)))
+		return self.node.getValue(self.field)
+
+class BaseNode:
+	SubNodeInsDic = {}# 存储各子类实例化对象字典  以NodeName为key
+
+	# 解析规则使用
+	subNodeClassDic = {}# 记录规则的关键字段对应类名
+	localFuncValueDicStack = []#函数的局部变量字典栈
+
+	# 子类的初始化参数必须保持一致 nodeName、instanceName就可以标识唯一结点了 
+	# 规则中两字段标识结点也简洁
+	def __init__(self,nodeName,instanceName):
+		self.nodeName = nodeName#结点名字对应类名 不是实例名  用于规则的关键字判断
+		self.instanceName = instanceName# 实例化对象序号
+		self.initNodeInstance()
+
+		# 参数和返回值 通过绑定NodeSlot对象
+		# NodeSlot对象是为了绑定结点间数据关系(未能取值的时候先绑定关系)
+		self.argNodeSlotDic = {}#指向一个NodeSlot对象
+		self.returnNodeSlotDic = {}#初始化维持一个NodeSlot对象
+		self.retValueDic = {}#记录返回值
+		self.handleLinkNodeDic = {}#指向一个实例结点
+
+		self.localValueDic = {}#局部变量字典  存放实参及内部局部变量
+		#函数内采用封闭作用域  没有全局变量节点的概念
+
+		self.moveStep = 0#对应的前进步数 对应规则读取数据的实际消耗  为实现默认参数
+
+	def __repr__(self):
+		return "nodeName:{0} instanceName:{1}".format(self.nodeName,self.instanceName)
+		# return "\nnodeName:{0} instanceName:{1} \n----> argsList:{2} \n----> retsList:{3} \n----> handlesList:{4}".format(
+		# 	self.nodeName,self.instanceName,
+		# 	self.getArgsList(),self.getRetsList(),self.getHandlesList(),
+		# )
+
+	# 子类实例化时记录实例对象
+	def initNodeInstance(self):
+		# print("initNodeInstance", self.nodeName, self.instanceName)
+		insDic = BaseNode.SubNodeInsDic.setdefault(self.nodeName, {})
+		insDic[self.instanceName] = self
+
+	@staticmethod
+	def getNodeInstance(nodeName, instanceName):
+		insDic = BaseNode.SubNodeInsDic.get(nodeName, {})
+		return insDic.get(instanceName, None)
+
+	# @classmethod
+	# def getInstanceName(cls):
+	# 	return BaseNode.SubNodeInsIndex.setdefault(cls.nodeName, 0)
+
+	@staticmethod
+	def pushFuncLocalDic(funcNode):
+		BaseNode.localFuncValueDicStack.append(funcNode.localValueDic)
+
+	@staticmethod
+	def popFuncLocalDic():
+		return BaseNode.localFuncValueDicStack.pop()
+
+	@staticmethod
+	def getFuncLocalDic():
+		return {}
+		# return BaseNode.localFuncValueDicStack[-1]
+
+	@classmethod
+	def setArgsList(cls, argsList):
+		if type(argsList) is list:
+			cls.argsList = argsList
+		else:
+			cls.argsList = []
+
+	@classmethod
+	def getArgsList(cls):
+		if hasattr(cls, "argsList") is False:
+			cls.argsList = []
+		return cls.argsList
+
+	def getArgNodeSlot(self, fieldName):
+		if fieldName in self.argsList:
+			return self.argNodeSlotDic.get(fieldName)
+
+	def getArgValue(self, fieldName):
+		if fieldName in self.argsList:
+			nodeSlot = self.argNodeSlotDic.get(fieldName)
+			if nodeSlot:
+				return nodeSlot.getValue()
+
+	def bindArgNodeSlot(self, fieldName, nodeSlot):
+		self.argNodeSlotDic[fieldName] = nodeSlot
+
+	def getLocalValue(self, fieldName):
+		return self.localValueDic.get(fieldName)
+
+	def getLocalArgPointer(self, fieldName):
+		nodeSlot = self.getArgNodeSlot(fieldName)
+		if nodeSlot:
+			return nodeSlot.node
+
+	@classmethod
+	def setRetsList(cls, retsList):
+		if type(retsList) is list:
+			cls.retsList = retsList
+		else:
+			cls.retsList = []
+
+	@classmethod
+	def getRetsList(cls):
+		if hasattr(cls, "retsList") is False:
+			cls.retsList = []
+		return cls.retsList
+
+	def initRetsNodeSlot(self):
+		for fieldName in self.retsList:
+			self.returnNodeSlotDic[fieldName] = NodeSlot(self, fieldName)
+
+	def getRetNodeSlot(self, fieldName):
+		if fieldName in self.retsList:
+			return self.returnNodeSlotDic.get(fieldName)
+
+	# 返回值 在函数结束时保存在函数实例中 随调用而改变
+	# 需要使用该次调用的返回值 只需要在下次调用前取出数据并保存
+	def getReturnValue(self, fieldName):
+		# print("getReturnValue nodeName:{0} fieldName:{1} value:{2}".format(self.nodeName, fieldName, self.retValueDic.get(fieldName, None)))
+		return self.retValueDic.get(fieldName, None)
+
+	# 暂时没有好的调用逻辑及顺序
+	def bindReturnValue(self, fieldName, value):
+		# print("bindReturnValue nodeName:{0} fieldName:{1} value:{2}".format(self.nodeName, fieldName, value))
+		self.retValueDic[fieldName] = value
+
+	@classmethod
+	def setHandlesList(cls, handlesList):
+		if type(handlesList) is list:
+			cls.handlesList = handlesList
+		else:
+			cls.handlesList = []
+
+	@classmethod
+	def getHandlesList(cls):
+		if hasattr(cls, "handlesList") is False:
+			cls.handlesList = []
+		return cls.handlesList
+
+	def getHandleLinkNode(self, fieldName):
+		if fieldName in self.handlesList:
+			return self.handleLinkNodeDic.get(fieldName)
+
+	def linkNodeFiled(self, fieldName, nextNode):
+		self.handleLinkNodeDic[fieldName] = nextNode
+
+	# -- 在getInsMoveStepByRule及getFieldByRule中分别定义消耗的次数
+	def setMoveStep(self, moveStep):
+		self.moveStep = moveStep
+
+	def getMoveStep(self):
+		return self.moveStep
+
+	# 各个子类重定义
+	@classmethod
+	def getInsMoveStepByRule(cls, keyWord):
+		moveStep = 0
+		if type(keyWord) is int:#默认实例名必须为数字 为了区分
+			moveStep = 1
+		return moveStep
+
+	# 各个子类重定义
+	# 根据各子类的实例名初始化逻辑  获取字段进行初始化
+	# 根据实际使用逻辑修改该对象的数据
+	def getFieldByRule(self, fieldNameList, moveStep = 0):
+		if fieldNameList is None:
+			return self.getDefaultFieldName()
+		fieldName = fieldNameList[0]
+		argsList = self.getArgsList()
+		retsList = self.getRetsList()
+		handlesList = self.getHandlesList()
+		if (fieldName in argsList) or (fieldName in retsList) or (fieldName in handlesList):
+			self.setMoveStep(moveStep+1)
+			return fieldName
+		else:
+			self.setMoveStep(moveStep)
+			return self.getDefaultFieldName()
+
+	def getDefaultFieldName(self):
+		return "Result"
+
+	def initLocalArgs(self):
+		for argName in self.getArgsList():
+			# print("nodeName:{0} instanceName:{1} initLocalArgs argName:{2}".format(self.nodeName, self.instanceName, argName))
+			argNodeSlot = self.getArgNodeSlot(argName)
+			if argNodeSlot:
+				self.localValueDic[argName] = argNodeSlot.getValue()
+			else:
+				print("argName is not bind NodeSlot")
+
+	# 各个子类重定义
+	# 主体逻辑及绑定存放返回值
+	def calculate(self):
+		# self.getLocalValue(fieldName)#获取实参
+		# self.bindReturnValue(fieldName, value)#绑定返回值
+		pass
+
+	# 定义结点后续
+	def runNext(self):
+		nextNode = self.getHandleLinkNode("Next")
+		if nextNode:
+			nextNode.run()
+
+	def run(self):
+		self.initLocalArgs()#实参初始化
+		self.calculate()#运行主体逻辑及绑定存放返回值
+		self.runNext()
+
+	def WaitBind(self, fieldNameList, node):
+		self.fieldNameList = fieldNameList
+		self.waitNode = node
+
+	def SetBind(self, fieldName):
+		if fieldName in self.fieldNameList:
+			self.fieldNameList.remove(fieldName)
+			if not self.fieldNameList:
+				self.waitNode.run()
+
+	@staticmethod
+	def RunNextNode():
+		if BaseNode.nextNode:
+			BaseNode.nextNode.run()
+
+	@staticmethod
+	def setRunNextNode(nextNode):
+		BaseNode.nextNode = nextNode
+
+
+class ValueNode(BaseNode):
+	'''局部变量 全局变量 表达式'''
+	def __init__(self, valueType, valueName):
+		print("ValueNode valueType:{0} valueName:{1}".format(valueType, valueName))
+		# BaseNode.subNodeClassDic.setdefault(valueType, ValueNode)
+		super(ValueNode, self).__init__(valueType, valueName)#结点类型名
+		ValueNode.setArgsList([])
+		ValueNode.setRetsList(["Result"])
+		ValueNode.setHandlesList([])
+		self.initRetsNodeSlot()
+
+	def setValue(self, value):
+		fieldName = self.getDefaultFieldName()
+		self.bindReturnValue(fieldName, value)
+
+	# 各个子类重定义
+	def getValue(self, fieldName=None):
+		if fieldName is None:
+			fieldName = self.getDefaultFieldName()
+		elif fieldName != "Result":
+			print("ValueNode getValue(fieldName={0}) is error! fieldName need be Result".format(fieldName))
+		return self.getReturnValue(fieldName)
+
+	# # 数值结点 获取返回值结果 是取值时运算逻辑
+	# def calculate(self):
+	# 	self.setValue(None)#绑定返回值
+
+# 表达式
+class OperateNode(ValueNode):
+	'''操作节点  其值在取值时进行计算'''
+	'''蓝图取值之前 对该值的计算不像程序语言那样 在定义处运行  而是在取值时再计算'''
+	# argsNum = 2#操作结点操作数一致   instanceId、Field
+	def __init__(self, operateType,instanceId=None):
+		BaseNode.subNodeClassDic.setdefault(operateType, OperateNode)
+		# 直接调用ValueNode的父类BaseNode  不调用ValueNode的__init__方法
+		super(ValueNode, self).__init__(operateType,instanceId)#结点类型名
+		OperateNode.setArgsList(["Left","Right"])#暂定操作参数为两个
+		OperateNode.setRetsList(["Result"])
+		OperateNode.setHandlesList([])
+		self.initRetsNodeSlot()
+		self.operateType = operateType# 枚举操作类型
+
+		# 各个子类重定义
+	def getValue(self,fieldName=None):
+		if fieldName is None:
+			fieldName = self.getDefaultFieldName()
+		elif fieldName != "Result":
+			print("Error")
+		self.run()#取值时重新运算逻辑
+		return self.getReturnValue(fieldName)
+
+	def calculate(self):
+		# print("OperateNode",self)
+		if self.operateType == "Add":
+			l = self.getArgValue("Left")
+			r = self.getArgValue("Right")
+			self.setValue(l + r)
+		elif self.operateType == "Not":
+			l = self.getArgValue("Left")
+			self.setValue(not l)
+		elif self.operateType == "And":
+			l = self.getArgValue("Left")
+			r = self.getArgValue("Right")
+			self.setValue(l and r)
+		elif self.operateType == "Equal":
+			l = self.getArgValue("Left")
+			r = self.getArgValue("Right")
+			# Log("Equal instanceName:{2} l:{0} r:{1}".format(l,r,self.instanceName))
+			self.setValue(l == r)
+		elif self.operateType == "Less":
+			l = self.getArgValue("Left")
+			r = self.getArgValue("Right")
+			self.setValue(l < r)
+
+class CalculateNode(BaseNode):
+	def __init__(self, nodeName, valueName, argsList=[],retsList=[],handlesList=[]):
+		# argsList, retsList, handlesList三个参数由规则定义
+		# print("CalculateNode nodeName:{0} valueName:{1}".format(nodeName, valueName))
+		# if nodeName is None:#动态参数节点
+		# print("nodeName is None")
+		super(CalculateNode, self).__init__(nodeName,valueName)#结点类型名
+		self.setArgsList(argsList)
+		self.setRetsList(retsList)
+		self.setHandlesList(handlesList)
+		self.initRetsNodeSlot()
+		# else:#特定类(固定参数)的节点
+		# 	print("nodeName is not None:{0}".format(nodeName))
+		# 	super(CalculateNode, self).__init__(nodeName,valueName)#结点类型名
+		# 	print("globals()[nodeName={0}]:{1}".format(nodeName, globals()[nodeName]))
+		# 	globals()[nodeName].setArgsList(argsList)
+		# 	globals()[nodeName].setRetsList(retsList)
+		# 	globals()[nodeName].setHandlesList(handlesList)
+		# pass
+
+	#重载设置参数、返回值、句柄等列表  将数据下放到实例对象
+	def setArgsList(self, argsList):
+		if type(argsList) is list:
+			self.argsList = argsList
+		else:
+			self.argsList = []
+
+	def getArgsList(self):
+		if hasattr(self, "argsList") is False:
+			self.argsList = []
+		return self.argsList
+
+	def setRetsList(self, retsList):
+		if type(retsList) is list:
+			self.retsList = retsList
+		else:
+			self.retsList = []
+
+	def getRetsList(self):
+		if hasattr(self, "retsList") is False:
+			self.retsList = []
+		return self.retsList
+
+	def setHandlesList(self, handlesList):
+		if type(handlesList) is list:
+			self.handlesList = handlesList
+		else:
+			self.handlesList = []
+
+	def getHandlesList(self):
+		if hasattr(self, "handlesList") is False:
+			self.handlesList = []
+		return self.handlesList
+
+	@classmethod
+	def getInsMoveStepByRule(cls, keyWord):
+		return 1
+
+	def getValue(self, fieldName):
+		return self.getReturnValue(fieldName)
+
+# 复合节点  对应函数
+# 局部变量仅在函数内部有意义
+# 函数进入和退出 设置局部变量栈序号
+class Composite(CalculateNode):
+	def __init__(self, valueName, instanceName, argsList=[],retsList=[],handlesList=[]):
+		BaseNode.subNodeClassDic.setdefault(valueName, self)
+		print("Composite valueName:{0} instanceName:{1}".format(valueName, instanceName))
+		super(Composite, self).__init__(valueName,instanceName,argsList,retsList,handlesList)
+
+		self.startNode = CalculateNode("CalculateNode","startNode",["Test"],argsList,["Next"])
+		self.endNode = CalculateNode("CalculateNode","endNode",retsList,[],handlesList)
+		# print("startNode",self.startNode)
+		# print("endNode",self.endNode)
+
+	@staticmethod
+	def LinkStartNode(nodeName, instanceName=None):
+		rule = ["CalculateNode","startNode","Next","Link"]
+		rule.append(nodeName)
+		if instanceName:
+			rule.append(instanceName)
+		return rule
+
+	@staticmethod
+	def LinkEndNode(nodeName, instanceName=None, fieldName=None):
+		rule = []
+		rule.append(nodeName)
+		if instanceName:
+			rule.append(instanceName)
+		if fieldName:
+			rule.append(fieldName)
+		rule.extend(["Link","CalculateNode","endNode"])
+		return rule
+
+	def calculate(self):
+		for fieldName in self.getArgsList():#函数实参初始化
+			self.startNode.bindReturnValue(fieldName, self.getLocalValue(fieldName))
+		for fieldName in self.getHandlesList():#函数句柄初始化
+			self.endNode.linkNodeFiled(fieldName, self.getHandleLinkNode(fieldName))
+		self.startNode.run()#运行函数主体逻辑
+		for fieldName in self.getRetsList():
+			self.bindRetValueNode(fieldName, self.endNode.getLocalValue(fieldName))
+
+# 局部变量仅在函数内部有意义
+class LocalValue(ValueNode):
+	def __init__(self, valueType, valueName):
+		# print("LocalValue:{0} init".format(valueName))
+		if valueType != "LocalValue":
+			print("LocalValue(valueType={0},value={1}), valueType ~= 'String'".format(valueType,value))
+			valueType = "LocalValue"
+		super(LocalValue, self).__init__(valueType,valueName)#结点类型名
+
+	@classmethod
+	def getInsMoveStepByRule(cls, keyWord):
+		return 1
+
+	def setValue(self, value):
+		# localValueDic = BaseNode.getFuncLocalDic()
+		# if localValueDic.get(self.instanceName) is not None:
+		# 	print("LocalValue valueName:{0} is exsit!!! valueName may be argName")
+		# localValueDic.setdefault(self.instanceName, value)
+		self.bindReturnValue("Result", value)
+
+# 字面量 名字为其值
+class String(ValueNode):
+	def __init__(self, valueType, value):
+		if valueType != "String":
+			print("String(valueType={0},value={1}), valueType ~= 'String'".format(valueType,value))
+			valueType = "String"
+		super(String, self).__init__(valueType, value)
+
+	@classmethod
+	def getInsMoveStepByRule(cls, keyWord):
+		return 1
+
+	def getFieldByRule(self, fieldNameList):
+		self.bindReturnValue("Result", str(self.instanceName))
+		return ValueNode.getFieldByRule(self, fieldNameList)
+
+	def setValue(self, value):
+		print("String is literal, can't setValue value:{0}".format(value))
+
+class Int(ValueNode):
+	def __init__(self, valueType, value):
+		# print("Int init:{0}".format(value))
+		if valueType != "Int":
+			print("Int(valueType={0},value={1}), valueType ~= 'Int'".format(valueType,value))
+			valueType = "Int"
+		super(Int, self).__init__(valueType, value)
+
+	# 默认实例名就是数字 该函数可省略重载
+	@classmethod
+	def getInsMoveStepByRule(cls, keyWord):
+		return 1
+
+	def getFieldByRule(self, fieldNameList):
+		self.bindReturnValue("Result", int(self.instanceName))
+		return ValueNode.getFieldByRule(self, fieldNameList)
+
+	def setValue(self, value):
+		print("Int is literal, can't setValue value:{0}".format(value))
+
+class List(ValueNode):
+	def __init__(self, valueType, value):
+		if valueType != "List":
+			print("List(valueType={0},value={1}), valueType ~= 'List'".format(valueType,value))
+			valueType = "List"
+		super(List, self).__init__(valueType, value)
+		self.bindReturnValue("Result", [])
+
+	@classmethod
+	def getInsMoveStepByRule(cls, keyWord):
+		moveStep = 0
+		if type(keyWord) is int:#默认实例名必须为数字 为了区分
+			moveStep = 1
+		return moveStep
+
+	def getFieldByRule(self, fieldNameList):
+		num = self.instanceName
+		dataList =  []
+		for i in range(0,num):
+			dataList.append(fieldNameList[i])
+		self.bindReturnValue("Result", dataList)
+		return ValueNode.getFieldByRule(self, fieldNameList[num:], num)
+
+	def setValue(self, value):
+		print("List is literal, can't setValue value:{0}".format(value))
+
+def main(*args,**kwargs):
+	pass
+
+# if __name__ == "__main__":
+# 	main()
+
+
+
+Check-副本.py
+import os
+import re
+import json
+import csv
+
+DefaultCSVFolder = "..\\..\\..\\Documents\\csv"#读取的CSV文件夹路径
+DefaultCheckRuleName = "CheckRule.txt"
+
+CSVFolderPath = None
+CheckRuleFilePath = None
+
+errorDic = []
+errorState = None
+
+def printError(errorStr):
+	print(errorStr)
+	errorDic.append(errorStr)
+
+def getNodeLog(treeNode):
+		csvName = treeNode.getCSVName()
+		csvKeyList = treeNode.getCSVKeyList()
+		return "<<{0} key:{1}>>".format(csvName,csvKeyList)
+
+OpDic = {}# 操作字典
+class OpNode:
+	def __init__(self, checkType, opIndex, *args):
+		self.checkType = checkType
+		self.valueList = []
+		self.argsList = args
+
+	def getCheckType(self):
+		return self.checkType
+
+	def initValueList(self):
+		if self.checkType == "Range":
+			minValue = self.argsList[0]
+			maxValue = self.argsList[1]
+			for i in range(minValue,maxValue):
+				self.valueList.append(i)
+		elif self.checkType == "Filter":
+			pass
+
+	def getValueList(self): 
+		if not self.valueList:
+			self.initValueList()
+		return self.valueList
+
+	def getOutList(self):
+		pass
+
+class TreeNode:
+	def __init__(self,csvName,csvKeyList,keyValueList,parent=None):
+		self.csvName = csvName
+		self.csvKeyList = csvKeyList
+		self.keyValueList = keyValueList
+		self.parent = parent
+		self.childList = []
+
+	def addChild(self,treeNode):
+		treeNode.setParent(self)
+		self.childList.append(treeNode)
+
+	def setParent(self,treeNode):
+		self.parent = treeNode
+
+	def getCSVName(self):
+		return self.csvName
+
+	def getCSVKeyList(self):
+		return self.csvKeyList
+
+	def getValueList(self):
+		return self.keyValueList
+
+	def getChildList(self):
+		return self.childList
+
+#每条检测链都只有一个出口判断最后结果
+  
+class CheckTree:
+	def __init__(self, treeHead):
+		self.treeHead = treeHead
+
+	# Message:{
+	# 	valueList:List
+	# 	valueType = ["Index","Value"]
+	# }
+
+	def run(self):
+		inputValueList = self.treeHead.getValueList()
+		checkType = "Value"
+		childList = self.treeHead.getChildList()
+		for childNode in childList:
+			self.runCheck(inputValueList, self.treeHead, checkType, childNode)
+
+	def checkData(self,leftValueList, leftTreeNode, checkType, rightTreeNode):
+		resultValueList = []
+		# leftValueList = leftTreeNode.getValueList()
+		rightValueList = rightTreeNode.getValueList()
+		if checkType == "Value":
+			for value in leftValueList:
+				findFlag = False
+				if value in rightValueList:
+					for v in rightValueList:
+						if value == v:
+							resultValueList.append(i)
+							return
+				else:
+					printError("can't find {0} value:[{1}] in {2}".format(getNodeLog(leftTreeNode),value,getNodeLog(rightTreeNode)))
+					return
+		elif checkType == "Index":
+			if len(leftValueList) != len(rightValueList):
+				printError("len of ValueList is not equal! {0} with {1}".format(getNodeLog(leftTreeNode),getNodeLog(rightTreeNode)))
+				return
+
+			for index in leftValueList:
+				resultValueList.append(rightValueList[index])
+
+		return resultValueList
+
+	def runCheck(self, inputValueList, leftTreeNode, checkType, rightTreeNode):
+		outValueList = self.checkData(inputValueList, leftTreeNode, checkType, rightTreeNode)
+		if not outValueList:
+			return
+
+		if checkType == "Index":
+			checkType = "Value"
+		elif checkType == "Value":
+			checkType = "Index"
+		
+		childList = rightTreeNode.getChildList()
+		for childNode in childList:
+			self.runCheck(outValueList, rightTreeNode, checkType, childNode)
+
+def readCSV(fileName, keyList):
+	# filePath = os.path.join(os.getcwd(),DefaultCSVFolder,fileName)
+	filePath = os.path.join(CSVFolderPath, fileName)
+	if not os.path.exists(filePath):
+		printError("csv path:{0} is not exists!".format(filePath))
+		return
+	with open(filePath,mode="r",encoding="utf-8-sig",errors="ignore") as f:
+		lineIndex = 0
+		keyIndexDic = {}
+		dataMatrix = {}
+		for key in keyList:
+			dataMatrix.setdefault(key, [])
+
+		f_csv = csv.reader(f)
+		for rowDataList in f_csv:
+			lineIndex = lineIndex + 1
+			if lineIndex == 1:
+				for i,key in enumerate(rowDataList):
+					if dataMatrix.get(key) is not None:#空表和None的判断结果一样
+						keyIndexDic[i] = key#后续值替换为dataMatrix.get(key)
+
+				if len(keyIndexDic) != len(dataMatrix):
+					values = keyIndexDic.values()
+					for key in dataMatrix.keys():
+						if key not in values:
+							printError("can't find key:{0} in file:{1}".format(key,filePath))
+					return
+				else:
+					for i,key in keyIndexDic.items():
+						keyIndexDic[i] = dataMatrix.get(key)
+			elif lineIndex != 2:#第二行默认为描述
+				for i,value in enumerate(rowDataList):
+					dataList = keyIndexDic.get(i)#空表和None的判断结果一样
+					if dataList is not None:
+						dataList.append(value)
+
+		# print("readCSV dataMatrix",dataMatrix)
+		return dataMatrix
+
+class Rule:
+	def __init__(self):
+		self.ruleDic = {}
+
+		self.csvKeyCache = {}# csvIndex为key  查询csv的需要保存的key关键字
+		self.csvNameCache = {}# csv文件名缓存(带后缀) csvIndex为key
+		self.csvDataMatrix = {}# 数据总表   两层字典 key为csvIndex:csvKey  value为keyValueList
+		self.ruleTreeList = []# 检查树 列表
+
+		self.opDic = {}#
+
+		self.errorList = []#错误信息
+
+	def getCSVKeyValueList(self,csvIndex,csvKeyList):
+		# print("getCSVKeyValueList csvIndex:{0} csvKeyList:{1}".format(csvIndex,csvKeyList))
+		csvData = self.csvDataMatrix.get(csvIndex)
+		keyValueList = []
+		if csvData:
+			value = ""
+			for csvKey in csvKeyList:
+				valueList = csvData.get(csvKey)
+				if not valueList:
+					printError("can't find csvKey:{0} in csvKeyList:{1} from csvIndex:{2} csv:{3}".format(csvKey,csvKeyList,csvIndex,csvName))
+					return
+				for index,value in enumerate(valueList):
+					if len(keyValueList) == index:
+						keyValueList.append(value)
+						# keyValueList[index] = value
+					else:
+						keyValueList[index] = keyValueList[index] + "_" + value
+			if keyValueList:
+				return keyValueList
+			else:
+				csvName = self.getCSVNameByIndex(csvIndex, "<None>")
+				printError("can't find csvKeyList:{0} in csvIndex:{1} csv:{2}".format(csvKeyList,csvIndex,csvName))
+		else:
+			csvName = self.getCSVNameByIndex(csvIndex, "<None>")
+			printError("can't find csvIndex:{0} csv:{1}".format(csvIndex,csvName))
+
+	def initRule(self):
+		content = ""
+		# CheckRuleFilePath = os.path.join(os.getcwd(),"CheckRule.txt")
+		# print("initRule filePath:",CheckRuleFilePath)
+		if not os.path.exists(CheckRuleFilePath):
+			printError("CheckRulePath:{0} is not exists".format(CheckRuleFilePath))
+			return
+
+		with open(CheckRuleFilePath,mode="r",encoding="utf-8",errors="ignore") as f:
+				for line in f:
+					line = line.partition("//")[0]#删除注释
+					if len(line) == 0: continue
+					content = content+line
+
+		result = re.search("/\*(.*?)\*/", content, re.DOTALL)#删除/**/注释
+		if result:
+			spanTuple = result.span()
+			content = content[:spanTuple[0]]+content[spanTuple[1]:]
+
+		try:
+			self.ruleDic = json.loads(content)
+		except Exception as e:
+			printError("json loads rule File wrong:",e)
+			printError("check rule File content in https://www.json.cn/")
+			return
+
+		self.initCSVList()
+		self.initCSVDataMatrix()
+		self.initTrees()
+
+	def initCSVList(self):
+		self.csvNameCache = {}
+		csvMap = self.ruleDic.get("CSVMap", {})
+		for csvIndex, csvName in csvMap.items():
+			self.csvNameCache[csvIndex] = csvName+".csv"
+
+		self.csvKeyCache = {}
+		csvRuleList = self.ruleDic.get("CSVRuleList", [])
+		for treeData in csvRuleList:
+			for linkData in treeData:
+				csvKeyList = None
+				for v in linkData:
+					if v.isdigit():
+						csvIndex = v#注意这里索引采用数字的字符串形式
+						csvKeyList = self.csvKeyCache.setdefault(csvIndex, [])
+					else:
+						csvKey = v
+						if csvKey not in csvKeyList:
+							csvKeyList.append(csvKey)
+				# for i in range(len(linkData)//2):
+				# 	csvIndex = linkData[2*i]
+				# 	csvKey = linkData[2*i+1]
+				# 	csvKeyList = self.csvKeyCache.setdefault(csvIndex, [])
+				# 	if csvKey not in csvKeyList:
+				# 		csvKeyList.append(csvKey)
+		
+	def initCSVDataMatrix(self):
+		self.csvDataMatrix = {}
+		for csvIndex in self.csvKeyCache.keys():#仅读取所有规则需要的csv
+			self.initCSVData(csvIndex)
+		
+	def initCSVData(self, csvIndex):
+		csvName = self.getCSVNameByIndex(csvIndex)
+		keyList = self.csvKeyCache.get(csvIndex)
+		if csvName:
+			csvData = readCSV(csvName, keyList)
+			if csvData:
+				self.csvDataMatrix[csvIndex] = csvData
+
+	def initCheckTree(self, treeData):
+		treeHead = None
+
+		nodeMap = {}
+		treeNodeList = []
+		for linkData in treeData:
+			lastNode = None
+			csvIndex = None
+			csvKeyList = None
+			for v in linkData:
+				if v.isdigit():
+					csvIndex = v#注意这里索引采用数字的字符串形式
+					csvKeyList = []
+					# 记录节点数据
+					treeNodeList.append(csvIndex)
+					treeNodeList.append(csvKeyList)
+				else:
+					csvKeyList.append(v)
+
+		# print("treeNodeList",treeNodeList)
+		for i in range(len(treeNodeList)//2):
+			csvIndex = treeNodeList[2*i]
+			csvKeyList = treeNodeList[2*i+1]
+		
+			nodeKey = "{0}".format(csvIndex)
+			for key in csvKeyList:
+				nodeKey = nodeKey + "_" + key
+			node = nodeMap.get(nodeKey)
+			if not node:
+				keyValueList = self.getCSVKeyValueList(csvIndex, csvKeyList)
+				if not keyValueList:
+					return
+				csvName = self.getCSVNameByIndex(csvIndex)
+				if csvName:
+					node = TreeNode(csvName, csvKeyList, keyValueList)
+					if treeHead is None:
+						treeHead = node
+
+			if lastNode is None:
+				lastNode = node
+			else:
+				lastNode.addChild(node)#设置数据间关系
+				lastNode = node
+
+		return treeHead
+
+	def initTrees(self):
+		self.ruleTreeList = []
+		csvRuleList = self.ruleDic.get("CSVRuleList", [])
+		# print("csvRuleList", csvRuleList)
+		for treeData in csvRuleList:
+			# print("treeData",treeData)
+			treeHead = self.initCheckTree(treeData)
+			if treeHead:
+				self.ruleTreeList.append(CheckTree(treeHead))
+
+	def showData(self):		
+		print("ruleDic",self.ruleDic)
+		print("csvKeyCache",self.csvKeyCache)
+		print("csvNameCache",self.csvNameCache)
+		print("csvDataMatrix",self.csvDataMatrix)
+		print("ruleTreeList",self.ruleTreeList)
+		pass
+
+	def getCSVNameByIndex(self, csvIndex, default=None):
+		csvName = self.csvNameCache.get(csvIndex,default)
+		if not csvName:
+			printError("can't find csvIndex:{0} in CSVMap".format(csvIndex))
+		return csvName
+
+	def checkAll(self):
+		for checkTree in self.ruleTreeList:
+			checkTree.run()
+
+def main(*args,**kwargs):
+	global CSVFolderPath,CheckRuleFilePath
+	CSVFolderPath = os.path.join(os.getcwd(),DefaultCSVFolder)
+	CheckRuleFilePath = os.path.join(os.getcwd(),DefaultCheckRuleName)
+	rule = Rule()
+	rule.initRule()
+	rule.checkAll()
+	# rule.showData()
+	while True:
+		command = input("run again with ang char or 空字符退出:")
+		if command == "":
+			break
+		else:
+			rule.initRule()
+			rule.checkAll()
+			# rule.showData()
+	pass
+
+if __name__ == "__main__":
+	main()
+	# main(*args,**kwargs)
+  
+  
+  
+
+
+Check.py
+import os
+import re
+import json
+import csv
+
+errorDic = []
+errorState = None
+
+def printError(errorStr):
+	print(errorStr)
+	errorDic.append(errorStr)
+
+def getNodeLog(treeNode):
+		csvName = treeNode.getCSVName()
+		csvKeyList = treeNode.getCSVKeyList()
+		return "<<{0} key:{1}>>".format(csvName,csvKeyList)
+
+class TreeNode:
+	def __init__(self,csvName,csvKeyList,keyValueList,parent=None):
+		self.csvName = csvName
+		self.csvKeyList = csvKeyList
+		self.keyValueList = keyValueList
+		self.parent = parent
+		self.childList = []
+
+	def addChild(self,treeNode):
+		treeNode.setParent(self)
+		self.childList.append(treeNode)
+
+	def setParent(self,treeNode):
+		self.parent = treeNode
+
+	def getCSVName(self):
+		return self.csvName
+
+	def getCSVKeyList(self):
+		return self.csvKeyList
+
+	def getValueList(self):
+		return self.keyValueList
+
+	def getChildList(self):
+		return self.childList
+
+#每条检测链都只有一个出口判断最后结果
+class CheckTree:
+	def __init__(self, treeHead):
+		self.treeHead = treeHead
+
+	# Message:{
+	# 	valueList:List
+	# 	valueType = ["Index","Value"]
+	# }
+
+	def run(self):
+		inputValueList = self.treeHead.getValueList()
+		checkType = "Value"
+		childList = self.treeHead.getChildList()
+		for childNode in childList:
+			self.runCheck(inputValueList, self.treeHead, checkType, childNode)
+
+	def checkData(self,leftValueList, leftTreeNode, checkType, rightTreeNode):
+		resultValueList = []
+		# leftValueList = leftTreeNode.getValueList()
+		rightValueList = rightTreeNode.getValueList()
+		if checkType == "Value":
+			for value in leftValueList:
+				findFlag = False
+				if value in rightValueList:
+					for i,v in enumerate(rightValueList):
+						if value == v:
+							resultValueList.append(i)
+							return
+				else:
+					printError("can't find {0} value:[{1}] in {2}".format(getNodeLog(leftTreeNode),value,getNodeLog(rightTreeNode)))
+					return
+		elif checkType == "Index":
+			if len(leftValueList) != len(rightValueList):
+				printError("len of ValueList is not equal! {0} with {1}".format(getNodeLog(leftTreeNode),getNodeLog(rightTreeNode)))
+				return
+
+			for index in leftValueList:
+				resultValueList.append(rightValueList[index])
+
+		return resultValueList
+
+	def runCheck(self, inputValueList, leftTreeNode, checkType, rightTreeNode):
+		outValueList = self.checkData(inputValueList, leftTreeNode, checkType, rightTreeNode)
+		if not outValueList:
+			return
+
+		if checkType == "Index":
+			checkType = "Value"
+		elif checkType == "Value":
+			checkType = "Index"
+		
+		childList = rightTreeNode.getChildList()
+		for childNode in childList:
+			self.runCheck(outValueList, rightTreeNode, checkType, childNode)
+
+def initCheckTree(ruleObj, treeData):
+	treeHead = None
+
+	nodeMap = {}
+	treeNodeList = []
+	for linkData in treeData:
+		lastNode = None
+		csvIndex = None
+		csvKeyList = None
+		for v in linkData:
+			if type(v) == int:
+				csvIndex = str(v)
+			# if v.isdigit():
+			# 	csvIndex = v#注意这里索引采用数字的字符串形式
+				csvKeyList = []
+				# 记录节点数据
+				treeNodeList.append(csvIndex)
+				treeNodeList.append(csvKeyList)
+			else:
+				csvKeyList.append(v)
+
+	# print("treeNodeList",treeNodeList)
+	for i in range(len(treeNodeList)//2):
+		csvIndex = treeNodeList[2*i]
+		csvKeyList = treeNodeList[2*i+1]
+	
+		nodeKey = "{0}".format(csvIndex)
+		for key in csvKeyList:
+			nodeKey = nodeKey + "_" + key
+		node = nodeMap.get(nodeKey)
+		if not node:
+			keyValueList = ruleObj.getCSVKeyValueList(csvIndex, csvKeyList)
+			if not keyValueList:
+				return
+			csvName = ruleObj.getCSVNameByIndex(csvIndex)
+			if csvName:
+				node = TreeNode(csvName, csvKeyList, keyValueList)
+				if treeHead is None:
+					treeHead = node
+
+		if lastNode is None:
+			lastNode = node
+		else:
+			lastNode.addChild(node)#设置数据间关系
+			lastNode = node
+	return treeHead
+
+# csvRuleList = self.ruleDic.get("CSVRuleList", [])
+def initTrees(ruleObj,csvRuleList):
+	ruleTreeList = []
+	for treeData in csvRuleList:
+		# print("treeData",treeData)
+		treeHead = initCheckTree(ruleObj,treeData)
+		if treeHead:
+			ruleTreeList.append(CheckTree(treeHead))
+	return ruleTreeList
+
+def checkAll(ruleTreeList):
+	for checkTree in ruleTreeList:
+		checkTree.run()
+
+def main(*args,**kwargs):
+	DefaultCSVFolder = "..\\NZTrunk\\Documents\\csv"#读取的CSV文件夹路径
+	DefaultCheckRuleName = "CheckRule.json"
+	csvFolderPath = os.path.join(os.getcwd(),DefaultCSVFolder)
+	checkRuleFilePath = os.path.join(os.getcwd(),DefaultCheckRuleName)
+	
+	rule = Rule(checkRuleFilePath,csvFolderPath)
+	rule.initRule()
+
+	# Log("ruleDic:{0}".format(rule.ruleDic))
+	csvRuleList = rule.ruleDic.get("CSVColRuleList", [])
+	Log("CSVColRuleList:{0}".format(csvRuleList))
+	ruleTreeList = initTrees(rule,csvRuleList)
+	Log("ruleTreeList:{0}".format(ruleTreeList))
+	checkAll(ruleTreeList)
+
+if __name__ == "__main__":
+	from Run import *
+	main()
+	# main(*args,**kwargs)
+
+
+
+
+main.py
+import os
+
+from BaseCore.BaseNode import *
+from Operate.BaseOperate import *
+from Operate.CSVOperate import *
+
+
+def LogLink(headNode):
+		handlesList = headNode.getHandlesList()
+		for fieldName in handlesList:
+			linkNode = headNode.getHandleLinkNode(fieldName)
+			if linkNode:
+				print("{0} FieldName:{1} Link {2}".format(headNode,fieldName,linkNode))
+				LogLink(linkNode)
+
+# 获取类的实例  后续改成每个类取不同参数来初始化
+def GetNodeInsByRule(nodeName, keyWord):
+	# 关键字转换为类   String对应ValueNode Add、Equal对应OperateNode
+	cls = BaseNode.subNodeClassDic.get(nodeName)
+	moveStep = 0
+	if cls is None:
+		cls = globals()[nodeName]
+		BaseNode.subNodeClassDic.setdefault(nodeName, cls)
+		# 如何兼容多个文件定义的类??
+	if cls:
+		# 前两个字段寻找实例对象  (字面量Int、String的实例名就是其值)
+		# 实例名一般用int类型来区分是否省略实例名
+		# 部分特殊结点  实例名不为int
+		moveStep = cls.getInsMoveStepByRule(keyWord)#默认0或1 代表可省略的实例名
+		# # 子类的初始化参数不同 如何统一？？？？
+		instanceName = None
+		if moveStep != 0:
+			instanceName = keyWord
+		nodeIns = BaseNode.getNodeInstance(nodeName, instanceName)
+		if nodeIns is None:
+			# Log("new cls instance ! cls:{0} nodeName:{1} instanceName:{2}".format(cls, nodeName, instanceName))
+			nodeIns = cls(nodeName,instanceName)#统一结点的初始化参数
+		nodeIns.setMoveStep(moveStep)
+		return nodeIns
+	else:
+		print("GetNodeInsByRule nodeName:{0} keyWord:{1} error".format(nodeName, keyWord))
+
+def initByRule(ruleList, headNodeName):
+		print("initByRule start!!!!!!! headNodeName:{0}".format(headNodeName))
+		# 每个节点定义了参数个数 可有默认参数值
+		HeadNode = None
+		for rule in ruleList:
+			index = 0
+			maxIndex = len(rule)
+			lastNode = None
+			lastFieldName = None
+			nodeIns = None
+			fieldName = None
+			while index < maxIndex:
+				keyWord = None
+				if rule[index] == "Bind":
+					index = index + 1
+					keyWord = "Bind"
+				elif rule[index] == "Link":
+					index = index + 1
+					keyWord = "Link"
+				ruleKey = rule[index]
+				instanceName = None
+				if index+1 < maxIndex:
+					instanceName = rule[index+1]
+				nodeIns = GetNodeInsByRule(ruleKey, instanceName)
+				moveStep = nodeIns.getMoveStep()#0或1 是否省略instanceName
+				print("ruleKey:{0} instanceName:{1} moveStep:{2}".format(ruleKey, instanceName, moveStep))
+				index = index + moveStep + 1
+				# print("keyWord:{0} index:{1} maxIndex:{2}".format(keyWord, index, maxIndex))
+				# 上一个节点的fieldName 可推算出"Bind" or "Link"
+				if keyWord == "Bind":#需要fieldName 即使其可能为空
+					fieldNameList = []
+					if index < maxIndex:
+						fieldNameList = rule[index:]
+					# else:#无参数 代表fieldName为空 采取默认的
+					# 	print("not arg to getFieldByRule!!!")
+					fieldName = nodeIns.getFieldByRule(fieldNameList)
+					moveStep = nodeIns.getMoveStep()#0或1 消耗的参数
+					index = index + moveStep
+					print("Bind\nnode:{0} fieldName:{1} Bind node:{2} fieldName:{3}".format(lastNode, lastFieldName, nodeIns, fieldName))
+					nodeSlot = lastNode.getRetNodeSlot(lastFieldName)
+					nodeIns.bindArgNodeSlot(fieldName, nodeSlot)
+				elif keyWord == "Link":#不需要fieldName
+					if headNodeName is None:
+						headNodeName = lastNode.nodeName
+						HeadNode = lastNode
+						print(HeadNode)
+						print(headNodeName)
+					print("Link\nnode:{0} fieldName:{1} link node:{2}".format(lastNode, lastFieldName, nodeIns))
+					lastNode.linkNodeFiled(lastFieldName, nodeIns)
+				else:
+					fieldNameList = []
+					if index < maxIndex:
+						fieldNameList = rule[index:]
+					# else:#无参数 代表fieldName为空 采取默认的
+					# 	print("not arg to getFieldByRule!!!")
+					fieldName = nodeIns.getFieldByRule(fieldNameList)
+					moveStep = nodeIns.getMoveStep()#0或1 消耗的参数
+					index = index + moveStep
+
+				if HeadNode is None and nodeIns.nodeName == headNodeName:
+					HeadNode = nodeIns
+
+				lastNode = nodeIns
+				lastFieldName = fieldName
+		print("initByRule end!!!!!!! headNodeName:{0}".format(headNodeName))
+		if HeadNode:
+			LogLink(HeadNode)
+		return HeadNode
+
+# 函数一个入口 多个节点可连接出口
+def runRuleList(ruleList, headNodeName, headNodeInsName, linkEndNodeList):
+	funcRuleList = []
+	funcRuleList.append(Composite.LinkStartNode(headNodeName,headNodeInsName))
+	funcRuleList.extend(ruleList)
+	for nodeInsTuple in linkEndNodeList:
+		nodeName = nodeInsTuple[0]
+		instanceName = nodeInsTuple[1]
+		fieldName = nodeInsTuple[2]
+		funcRuleList.append(Composite.LinkEndNode(nodeName,instanceName,fieldName))
+	mainFuncNode = Composite("ATTmain",None)
+	print("funcRuleList:",funcRuleList)
+	headNode = initByRule(funcRuleList,headNodeName)
+	if headNode:
+		headNode.run()
+	pass
+
+def testRuleFunc():
+	# 函数定义   未实现
+	ruleList = []
+	ruleList.append(["List","2","min","max","Bind","NewNode","Composite","GetRange","Args"])
+	ruleList.append(["List","1","rangeList","Bind","NewNode","Composite","GetRange","Rets"])
+	ruleList.append(["Int","1","Bind","GetRange","min"])
+	ruleList.append(["Int","3","Bind","GetRange","max"])
+	return ruleList
+
+def main(*args,**kwargs):
+	# OperateNode("Add")
+	# OperateNode("Not")
+	# OperateNode("And")
+	# OperateNode("Equal")
+	# OperateNode("Less")
+
+
+	ruleList = []
+	ruleList.append(["CSVData","BagChildUnlockTable","UnlockCondition","Bind","ForArray","List"])
+	ruleList.append(["ForArray","Loop","Link","Branch"])
+	ruleList.append(["ForArray","Value","Bind","Equal",1,"Left"])
+	ruleList.append(["String","1","Bind","Equal",1,"Right"])
+	ruleList.append(["Equal",1,"Bind","Branch","condition"])
+	ruleList.append(["Branch","True","Link","GetListValueByIndex"])
+	ruleList.append(["CSVData","BagChildUnlockTable","Parm1","Bind","GetListValueByIndex","List"])
+	ruleList.append(["ForArray","Index","Bind","GetListValueByIndex","Index"])
+	ruleList.append(["GetListValueByIndex","Bind","GetListIndexByValue","Value"])
+	ruleList.append(["GetListValueByIndex","Next","Link","GetListIndexByValue"])
+	ruleList.append(["CSVData","CommonItemTable","ItemID","Bind","GetListIndexByValue","List"])
+	ruleList.append(["GetListIndexByValue","Bind","Equal",2,"Left"])
+	ruleList.append(["ValueNode",-1,"Bind","Equal",2,"Right"])
+	ruleList.append(["GetListIndexByValue","Next","Link","Branch",1])
+	ruleList.append(["Equal",2,"Bind","Branch",1,"condition"])
+	# ruleList.append(["String","True","Bind","PrintString",1,"String"])
+	# ruleList.append(["Branch",1,"False","Link","PrintString",1])
+	ruleList.append(["GetListValueByIndex","Bind","PrintString",2,"String"])
+	ruleList.append(["Branch",1,"True","Link","PrintString",2])
+	# runRuleList(ruleList,"ForArray",None,[("PrintString",1,"Next"),("PrintString",2,"Next"),("Branch",None,"False")])
+	headNode = initByRule(ruleList,None)
+	headNode.run()
+
+	pass
+	# 改进一
+	# 采用渐进式的run 放弃原有的链式自动run  对于部分复用节点可省略实例名 比如操作节点
+
+	# 改进二
+	# 错误输出内嵌 避免错误信息相同样式但是反复定义 比如GetListIndexByValue、GetListValueByIndex 默认找不到对应的就应该错误提示并中断
+
+	# 改进三
+	# 整条检测链的最后逻辑结构类似  对比数据获取判断结果 即Branch结尾
+
+	# 改进四
+	# 复用节点与独立节点的判断  独立节点必然重复绑定参数  直接省略实例名
+
+	# 改进五
+	# 节点的默认关键字 希望能针对不同情况采取多样式的  关键字与Link Bind重复
+
+	# 改进六
+	# 关键字 Bink Link 可省略其一
+
+	# todo
+	# 规定定义推理函数 返回完整定义的规则链 暂时省略自定义函数
+
+if __name__ == "__main__":
+	# from Run import *
+	main() 
+
+
+
+
+
+
+import os
+import re
+import json
+import csv
+from Check import *
+from main import *
+
+DefaultCSVFolder = "..\\NZTrunk\\Documents\\csv"#读取的CSV文件夹路径
+DefaultCheckRuleName = "CheckRule.json"
+
+errorDic = []
+errorState = None
+
+LogTag = 0
+LogLimitList = [
+	# "Equal",
+	# "Print",
+	# "Equal",
+	"csvIndex:",
+]
+def Log(logStr=""):
+	flag = False
+	for i,limitStr in enumerate(LogLimitList):
+		if re.match(limitStr, logStr):
+			flag = True
+			break
+	if LogLimitList and not flag:
+		return
+
+	global LogTag
+	LogTag = (LogTag + 1)%10
+	print("{0}\n{1}\n{0}".format(str(LogTag)*20,logStr))
+
+def printError(errorStr):
+	print(errorStr)
+	errorDic.append(errorStr)
+
+def getNodeLog(treeNode):
+		csvName = treeNode.getCSVName()
+		csvKeyList = treeNode.getCSVKeyList()
+		return "<<{0} key:{1}>>".format(csvName,csvKeyList)
+
+def readCSV(csvFolderPath, fileName, keyList):
+	filePath = os.path.join(csvFolderPath, fileName)
+	# Log("readCSV filePath:{0} fileName:{1} keyList:{2}".format(filePath, fileName, keyList))
+	if not os.path.exists(filePath):
+		printError("csv path:{0} is not exists!".format(filePath))
+		return
+	with open(filePath,mode="r",encoding="utf-8-sig",errors="ignore") as f:
+	# with open(filePath,mode="r",encoding="utf-8-sig",errors="ignore") as f:
+		lineIndex = 0
+		keyIndexDic = {}
+		dataMatrix = {}
+		for key in keyList:
+			dataMatrix.setdefault(key, [])
+
+		f_csv = csv.reader(f)
+		for rowDataList in f_csv:
+			lineIndex = lineIndex + 1
+			if lineIndex == 1:
+				for i,key in enumerate(rowDataList):
+					if dataMatrix.get(key) is not None:#空表和None的判断结果一样
+						keyIndexDic[i] = key#后续值替换为dataMatrix.get(key)
+
+				if len(keyIndexDic) != len(dataMatrix):
+					values = keyIndexDic.values()
+					for key in dataMatrix.keys():
+						if key not in values:
+							printError("can't find key:{0} in file:{1}".format(key,filePath))
+					return
+				else:
+					for i,key in keyIndexDic.items():
+						keyIndexDic[i] = dataMatrix.get(key)
+			elif lineIndex != 2:#第二行默认为描述
+				for i,value in enumerate(rowDataList):
+					dataList = keyIndexDic.get(i)#空表和None的判断结果一样
+					if dataList is not None:
+						dataList.append(value)
+
+		# print("readCSV dataMatrix",dataMatrix)
+		return dataMatrix
+
+class Rule:
+	def __init__(self, checkRuleFilePath,csvFolderPath):
+		self.ruleDic = {}
+
+		self.checkRuleFilePath = checkRuleFilePath
+		self.csvFolderPath = csvFolderPath
+		Log("Init Rule checkRuleFilePath:{0} csvFolderPath:{1}".format(self.checkRuleFilePath, self.csvFolderPath))
+		self.csvKeyCache = {}# csvIndex为key  查询csv的需要保存的key关键字
+		self.csvNameCache = {}# csv文件名缓存(带后缀) csvIndex为key
+		self.csvIndexMap = {}
+		self.csvNameMap = {}
+		self.csvDataMatrix = {}# 数据总表   两层字典 key为csvIndex:csvKey  value为keyValueList
+		self.ruleTreeList = []# 检查树 列表
+
+		self.opDic = {}#
+
+		self.errorList = []#错误信息
+
+	# 多关键字组合数据
+	def getCSVKeyValueList(self,csvIndex,csvKeyList):
+		# print("getCSVKeyValueList csvIndex:{0} csvKeyList:{1}".format(csvIndex,csvKeyList))
+		csvData = self.csvDataMatrix.get(csvIndex)
+		keyValueList = []
+		if csvData:
+			for csvKey in csvKeyList:
+				# valueList = csvData.get(csvKey)
+				valueList = self.getCSVFilterValueList(csvIndex,csvKey)
+				if not valueList:
+					printError("can't find csvKey:{0} in csvKeyList:{1} from csvIndex:{2} csv:{3}".format(csvKey,csvKeyList,csvIndex,csvName))
+					return
+				for index,value in enumerate(valueList):
+					if len(keyValueList) == index:#第一列关键字数据
+						keyValueList.append(value)
+						# keyValueList[index] = value
+					else:
+						keyValueList[index] = keyValueList[index] + "_" + value
+			if keyValueList:
+				return keyValueList
+			else:
+				csvName = self.getCSVNameByIndex(csvIndex, "<None>")
+				printError("can't find csvKeyList:{0} in csvIndex:{1} csv:{2}".format(csvKeyList,csvIndex,csvName))
+		else:
+			csvName = self.getCSVNameByIndex(csvIndex, "<None>")
+			printError("can't find csvIndex:{0} csv:{1}".format(csvIndex,csvName))
+
+	def initRule(self):
+		content = ""
+		# CheckRuleFilePath = os.path.join(os.getcwd(),"CheckRule.txt")
+		# print("initRule filePath:",CheckRuleFilePath)
+		if not os.path.exists(self.checkRuleFilePath):
+			printError("CheckRulePath:{0} is not exists".format(self.checkRuleFilePath))
+			return
+
+		with open(self.checkRuleFilePath,mode="r",encoding="utf-8",errors="ignore") as f:
+				for line in f:
+					line = line.partition("//")[0]#删除注释
+					if len(line) == 0: continue
+					content = content+line
+
+		result = re.search("/\*(.*?)\*/", content, re.DOTALL)#删除/**/注释
+		if result:
+			spanTuple = result.span()
+			content = content[:spanTuple[0]]+content[spanTuple[1]:]
+
+		try:
+			self.ruleDic = json.loads(content)
+		except Exception as e:
+			printError("json loads rule File wrong:{0}".format(e))
+			printError("check rule File content in https://www.json.cn/")
+			return
+
+		self.initCSVList()
+		self.initCSVDataMatrix()
+		self.showData()
+
+	def initCSVList(self):
+		self.csvNameCache = {}
+		# csvMap = self.ruleDic.get("CSVMap", {})
+		# for csvIndex, csvName in csvMap.items():
+		# 	self.csvNameCache[csvIndex] = csvName+".csv"
+		# 	self.csvIndexMap[csvIndex] = csvName
+		# 	self.csvNameMap[csvName] = csvIndex
+		csvMapList = self.ruleDic.get("CSVMap", [])
+		for tupleList in csvMapList:
+			csvIndex = str(tupleList[0])
+			csvName = tupleList[1]
+			self.csvNameCache[csvIndex] = csvName+".csv"
+			self.csvIndexMap[csvIndex] = csvName
+			self.csvNameMap[csvName] = csvIndex
+
+		self.csvKeyRuleDicMatrix = {}
+		csvKeyRule = self.ruleDic.get("CSVKeyRule", {})
+		for csvName,keysRule in csvKeyRule.items():
+			csvIndex = self.csvNameMap[csvName]
+			keyRuleDic = {}
+			for keyRule in keysRule:
+				keyName = keyRule.get("name")
+				keyRuleDic[keyName] = keyRule
+			self.csvKeyRuleDicMatrix[csvIndex] = keyRuleDic
+		Log("csvKeyRuleDicMatrix:{0}".format(self.csvKeyRuleDicMatrix))
+
+		self.csvKeyCache = {}
+		#列规则列表
+		csvRuleList = self.ruleDic.get("CSVColRuleList", [])
+		for treeData in csvRuleList:
+			for linkData in treeData:
+				csvKeyList = None
+				for v in linkData:
+					# if v.isdigit():
+					if type(v) == int:
+						# csvIndex = v#注意这里索引采用数字的字符串形式
+						csvIndex = str(v)
+						csvKeyList = self.csvKeyCache.setdefault(csvIndex, [])
+					else:
+						csvKey = v
+						if csvKey not in csvKeyList:
+							csvKeyList.append(csvKey)
+				# for i in range(len(linkData)//2):
+				# 	csvIndex = linkData[2*i]
+				# 	csvKey = linkData[2*i+1]
+				# 	csvKeyList = self.csvKeyCache.setdefault(csvIndex, [])
+				# 	if csvKey not in csvKeyList:
+				# 		csvKeyList.append(csvKey)
+
+		#行规则列表 暂不初始化收集CSV关键字列表
+		csvRuleList = self.ruleDic.get("CSVRowRuleList",[])
+		for ruleList in csvRuleList:
+			for linkData in ruleList:
+				csvKeyList = None
+				parserCSV = False
+				csvIndex = None
+				csvKey = None
+				for v in linkData:
+					# Log("v:{0} parserCSV:{1} csvIndex:{2} csvKey:{3}".format(v,parserCSV,csvIndex,csvKey))
+					if v == "CSVData":
+						parserCSV = True
+					elif v == "Bind":
+						parserCSV = False
+						csvIndex = None
+						csvKey = None
+					elif parserCSV:
+						if csvIndex is None:
+							#注意这里规则使用CSV文件名 不带后缀
+							for index, csvFileName in self.csvNameCache.items():
+								if csvFileName[:-4] == v:
+									csvIndex = index
+							# print("csvIndex:{0} csvName:{1}".format(csvIndex, v))
+							csvKeyList = self.csvKeyCache.setdefault(csvIndex, [])
+						elif csvKey is None:
+							csvKey = v
+							if csvKey not in csvKeyList:
+								csvKeyList.append(csvKey)
+		# Log("initCSVData csvKeyCache:{0}".format(self.csvKeyCache))
+
+	def initCSVDataMatrix(self):
+		self.csvDataMatrix = {}
+		for csvIndex in self.csvKeyCache.keys():#仅读取所有规则需要的csv
+			self.initCSVData(csvIndex)
+		# Log("csvDataMatrix:{0}".format(self.csvDataMatrix))
+		
+	def initCSVData(self, csvIndex):
+		csvName = self.getCSVNameByIndex(csvIndex)
+		keyList = self.csvKeyCache.get(csvIndex)
+		if csvName:
+			csvData = readCSV(self.csvFolderPath, csvName, keyList)
+			if csvData:
+				self.csvDataMatrix[csvIndex] = csvData
+
+	def getCSVNameByIndex(self, csvIndex, default=None):
+		csvName = self.csvNameCache.get(csvIndex,default)
+		if not csvName:
+			printError("can't find csvIndex:{0} in CSVMap".format(csvIndex))
+		return csvName
+
+	def getCSVValueList(self, csvIndex, csvKey):
+		csvData = self.csvDataMatrix.get(csvIndex)
+		if csvData is not None:
+			valueList = csvData.get(csvKey, [])
+			return valueList
+		else:
+			printError("getCSVValueList can't find csvIndex:{0} in csvDataMatrix".format(csvIndex))
+		return []
+
+	def getCSVKeyRule(self, csvIndex, csvKey):
+		csvKeyRuleDic = self.csvKeyRuleDicMatrix[csvIndex]
+		if csvKeyRuleDic:
+			return csvKeyRuleDic.get(csvKey, {})
+
+	def getCSVFilterValueList(self, csvIndex, csvKey):
+		valueList = self.getCSVValueList(csvIndex, csvKey)
+		keyRule = self.getCSVKeyRule(csvIndex, csvKey)
+		if keyRule:
+			keyType = keyRule.get("type","String")
+			if keyType == "Number":
+				for i,value in enumerate(valueList):
+					if not value.isdigit():
+						printError("csvIndex:{0} in CSVKey:{1} valueList[{2}]:{3} is not convert Number".format(csvIndex, csvKey, i, value))
+			elif keyType == "List":
+				pass
+		
+		ignoreRange = keyRule.get("IgnoreRange",[])
+		filterValueList = valueList
+		if ignoreRange:
+			print("ignoreRange",ignoreRange)
+			print("valueList",valueList)
+			for ignoreValue in ignoreRange:
+				filterValueList = filter(lambda value: value != ignoreValue, filterValueList)
+				filterValueList = list(filterValueList)
+				# valueList.remove(ignoreValue)
+			print("filterValueList",filterValueList)
+		return filterValueList
+
+	def showData(self):
+		Log("csvNameCache:{0} \ncsvKeyCache:{1}".format(self.csvNameCache, self.csvKeyCache))
+	# def checkAll(self):
+	# 	for checkTree in self.ruleTreeList:
+	# 		checkTree.run()
+
+def main(*args,**kwargs):
+	csvFolderPath = os.path.join(os.getcwd(),DefaultCSVFolder)
+	checkRuleFilePath = os.path.join(os.getcwd(),DefaultCheckRuleName)
+	rule = Rule(checkRuleFilePath,csvFolderPath)
+	rule.initRule()
+
+	csvRuleList = rule.ruleDic.get("CSVColRuleList", [])
+	ruleTreeList = initTrees(rule,csvRuleList)
+	checkAll(ruleTreeList)
+
+
+	# csvRuleList = rule.ruleDic.get("FuncRuleList", [])
+	# Log("FuncRuleList:{0}".format(csvRuleList))
+	# for ruleList in csvRuleList:
+	# 	headNode = initByRule(ruleList,None)
+	# 	if headNode:
+	# 		headNode.run()
+
+	# csvRuleList = rule.ruleDic.get("CSVRowRuleList", [])
+	# Log("CSVRowRuleList:{0}".format(csvRuleList))
+	# for ruleList in csvRuleList:
+	# 	headNode = initByRule(ruleList,None)
+	# 	if headNode:
+	# 		headNode.run()
+
+	while True:
+		command = input("run again with ang char or 空字符退出:")
+		if command == "":
+			break
+		else:
+			# rule.initRule()
+			# rule.checkAll()
+			pass
+	pass
+
+if __name__ == "__main__":
+	main()
+	# main(*args,**kwargs)
+Run.py
+
+
+
+
+
+/*
+	表结构采用Json    格式验证	https://www.json.cn/
+*/
+{
+	"CSVKeyRule" : {
+		"__Test_1" : [
+			{"name":"A"},
+			{"name":"B"},
+			{"name":"C"},
+			{"name":"D"}
+		],
+		"__Test_2" : [
+			{"name":"B"},
+			{"name":"D"},
+			{"name":"E"}
+		],
+		"__Test_3" : [
+			{"name":"E"},
+			{"name":"F"}
+		],
+		"__Test_4" : [
+			{"name":"D"},
+			{"name":"F"}
+		], 
+
+		"CommonItemTable" : [
+			{"name":"ItemID","type":"Number","ListSplit":"","RangeLimit":[1,2,3,4],"IgnoreRange":[""]}
+		],
+		"BagChildUnlockTable" : [
+			{"name":"UnlockCondition","type":"Number","ListSplit":"","RangeLimit":["",1,0],"IgnoreRange":[]},
+			{"name":"Parm1","type":"Number","ListSplit":"","RangeLimit":[],"IgnoreRange":[""]}
+		],
+		"DefaultRole" : [
+			{"name":"role_prop_id","type":"Number","RangeLimit":[],"IgnoreRange":["1"]},
+			{"name":"career_id","type":"Number","RangeLimit":[],"IgnoreRange":[""]},
+			{"name":"weapon_id","type":"Number","RangeLimit":[],"IgnoreRange":[""]},
+			{"name":"talent_ids","type":"List","ListSplit":";","RangeLimit":[],"IgnoreRange":[""]}
+		],
+		"CareerDataTable" : [
+		 	{"name":"CareerId","type":"Number","IgnoreRange":[]}
+		],
+		"RoleAttributes" : [
+			{"name":"role_id","type":"Number","ListSplit":"","RangeLimit":[],"IgnoreRange":[]},
+			{"name":"CareerId","type":"Number","ListSplit":"","RangeLimit":[],"IgnoreRange":[""]}
+		]
+	},
+	"CSVMap" : [// csv的数字索引关系 保存时采用数字字符串做key的字典
+		[1,"__Test_1"],
+		[2,"__Test_2"],
+		[3,"__Test_3"],
+		[4,"__Test_4"],
+		[5,"CommonItemTable"],
+		[6,"BagChildUnlockTable"],
+		[7,"DefaultRole"]
+	],
+	"FuncRuleList" : [
+		[//操作结点 各操作结点仅对应一个类 主要是记录操作类型 对应的实例对象
+			["List",2,"Left","Right","Bind","NewNode",1,"OperateNode","Add","Args"],
+			["List",1,"Result","Bind","NewNode",1,"OperateNode","Add","Rets"],
+			["List",2,"Left","Right","Bind","NewNode",2,"OperateNode","Equal","Args"],
+			["List",1,"Result","Bind","NewNode",2,"OperateNode","Equal","Rets"],
+			["List",2,"Left","Right","Bind","NewNode",3,"OperateNode","Not","Args"],
+			["List",1,"Result","Bind","NewNode",3,"OperateNode","Not","Rets"],
+			["List",2,"Left","Right","Bind","NewNode",4,"OperateNode","Add","Args"],
+			["List",1,"Result","Bind","NewNode",4,"OperateNode","And","Rets"],
+			["List",2,"Left","Right","Bind","NewNode",5,"OperateNode","Less","Args"],
+			["List",1,"Result","Bind","NewNode",5,"OperateNode","Less","Rets"],
+			["NewNode",1,"Link","NewNode",2],
+			["NewNode",2,"Link","NewNode",3],
+			["NewNode",3,"Link","NewNode",4],
+			["NewNode",4,"Link","NewNode",5]
+		],
+		[//基础函数 记录各函数名 对应的实例对象
+			// []
+		]
+	],
+	"CSVColRuleList" : [//关联数据
+		[//描述关系的每棵树
+			[1,"B",2,"B",2,"E",3,"E"],
+			[2,"B",2,"D",4,"D"],
+			[1,"B","D",2,"B","D"]
+		],
+		[
+			[6,"Parm1",5,"ItemID"]
+		],
+		[
+			[7,"role_prop_id",5,"ItemID"]
+		]
+	],
+	"CSVRowRuleList" : [//关联数据
+		[//描述关系的每棵树
+			["CSVData","BagChildUnlockTable","UnlockCondition","Bind","ForArray","List"],
+			["ForArray","Loop","Link","Branch"],
+			["ForArray","Value","Bind","Equal",1,"Left"],
+			["String","1","Bind","Equal",1,"Right"],
+			["Equal",1,"Bind","Branch","condition"],
+			["Branch","True","Link","GetListValueByIndex"],
+			["CSVData","BagChildUnlockTable","Parm1","Bind","GetListValueByIndex","List"],
+			["ForArray","Index","Bind","GetListValueByIndex","Index"],
+			["GetListValueByIndex","Bind","GetListIndexByValue","Value"],
+			["GetListValueByIndex","Next","Link","GetListIndexByValue"],
+			["CSVData","CommonItemTable","ItemID","Bind","GetListIndexByValue","List"],
+			["GetListIndexByValue","Bind","Equal",2,"Left"],
+			["ValueNode",-1,"Bind","Equal",2,"Right"],
+			["GetListIndexByValue","Next","Link","Branch",1],
+			["Equal",2,"Bind","Branch",1,"condition"],
+			["String","True","Bind","PrintString",1,"String"],
+			// ["Branch",1,"False","Link","PrintString",1],
+			["String","BagChildUnlockTable.csv  :","Bind","PrintString",2,"String"],
+			["GetListValueByIndex","Bind","PrintString",2,"AppendString"],
+			["String"," not find in CommonItemTable.csv ItemID Col","Bind","PrintString",2,"AppendString"],
+			["Branch",1,"True","Link","PrintString",2]
+		],
+		[
+			["CSVData","DefaultRole","role_prop_id","Bind","ForArray","List"],
+			["ForArray","Loop","Link"],
+			["ForArray","Index","Bind","GetListValueByIndex","Index"],
+			["CSVData","DefaultRole","talent_ids","Bind","GetListValueByIndex","List"],
+			["GetListValueByIndex","Value","Bind","ForArray",1,"List"],
+			["ForArray","Loop","Bind","ForArray",1,"List"],
+			["ForArray","Value","Bind","ForArray",1,"List"],
+		]
+	]
+}
+
+CheckRule.json
+
+
+/*
+	表结构采用Json    格式验证	https://www.json.cn/
+
+
+	1. json格式的规则定义 所有的数据都是字符串
+	2. Value("typeName","value"=input)--将value转换成typeName类型并返回
+	3. CheckType("typeName","value"=input)--返回是否可转换为类型
+	4. 绑定函数参数  BindValue,BindFuncArg
+		BindValue("valueName","value"=input)--绑定全局变量的值
+		BindFuncArg("FuncName","ArgName","value"=input)
+
+	基本接口
+	"BindArg" : ["OpName","ArgName","DefaultValue","value"=input]绑定函数参数
+	Sequeue:["valueName","1","2",...]//序列
+	Assign:["valueName","value"=input]//分配
+	Branch:["valueName","bool"=input]//创建一个名为valueName的分支
+
+	操作符 没有名字(按运行逻辑编写规则的话)
+	Less:["valueName","Left","Right"]
+	And Or//condition
+	Equal Less Greater//condition
+
+	"Number" : ["input"],//返回字符串转换的数字
+	"Boolean" : ["input"],//返回字符串转换的布尔值
+	"List":: ["input"],//返回字符串转换的列表
+	"List_Append":["valueName","element"]
+	"GetValue":["input"],//返回变量名的值(该值可以为一个表达式)
+	"GetFuncValue":["funcName","funcLocalName"]
+	"SetReturn:["value"=input]"
+	"CSVData":["CSVIndex","valueKey"]//返回CSV对应字段的行数据
+*/
+{
+	//			[3,"  ","GetRow",3,"max_level","Range","max"],
+//			["Number","1","Range","min"],
+//			["Range","List_Merge_MemberOfList","inputB"],
+//			["3","talent_id","List_Merge_MemberOfList","inputA"],
+//			["List_Merge_MemberOfList","4":["talent_id","talent_lev"]]
+
+	GetRowData: 获取当前数据所在行的数据列表
+	GetColData: 获取当前数据所在列的数据列表
+
+	For:["initSequeue","conditionSequeue","deltaSequeue","loopSequeue"]
+		initSequeue,conditionSequeue,Branch:["temp"]
+		Branch["temp"]:True,loopSequeue,deltaSequeue,conditionSequeue
+		//Branch["temp"]:False
+
+	ForLoop:[i,max,delta,loopSequeue,localValueName]
+		Sequeue:["initSequeue",1],GetValue:["i"],Assign:["localValueName"]
+		GetValue:["initSequeue"],BindArg:["For","initSequeue"]
+
+		GetValue:["i"],Less:["Left"]
+		GetValue:["delta"],Less:["Right"]
+		Sequeue:["conditionSequeue",1],Less:["Result"]
+		GetValue:["conditionSequeue"] ->BindArg:["For","conditionSequeue"]
+		
+		
+		GetValue:["i"],Add:["Left"]
+		GetValue:["delta"],Add:["Right"]
+		Sequeue:["deltaSequeue",1],Add:["Result"],Assign:["i"]
+		GetValue:["deltaSequeue"] ->BindArg:["For","deltaSequeue"]
+
+}
+ 
+
+
+
+
+
+结点类型：
+		BaseNode基本结点、其它结点的父类
+
+		ValueNode主要用于存放数值
+		OperateNode操作结点，用于逻辑表达式
+		数值类结点只有取值才会触发逻辑
+
+		CalculateNode基本逻辑结点 其子类是代码定义的
+		Composite复杂逻辑结点 对应于函数 其函数体采用规则表定义 使用其它结点组合逻辑主体
+		逻辑类结点只有运行才会触发逻辑
+
+BaseNode=> 每个结点具有两个关键字 nodeName结点名,对应规则关键字(一般就是类型或可寻址到类名)
+								instanceName实例名 该结点的实例对象名,用于寻址
+		每个结点三类数据：参数列表、返回值列表、句柄列表(指向一个运行逻辑)
+
+		返回值定义后初始化存放NodeSlot对象
+		参数列表绑定的是NodeSlot对象
+		因为参数绑定的都是数值类结点,数值类结点需要在运行时取值
+
+规则解析核心函数：
+		GetNodeInsByRule(nodeName, keyWord)用于返回结点实例对象
+			内部会更加nodeName获取类,并更加类的getInsMoveStepByRule(keyWord)判断实例名
+
+		getInsMoveStepByRule(cls, keyWord)控制实例名的判断规则
+
+		getFieldByRule(self, fieldNameList, moveStep = 0)判断关键字的读取逻辑,控制规则读取的前进步数
+
+结点间关系：Bind(绑定)、Link(链接)
+		绑定用于某个结点的参数绑定某个结点的某个返回值
+		链接用于某个结点的句柄绑定另一个结点
+
+
+关键函数：
+		initRetsNodeSlot()初始化返回值NodeSlot用于参数绑定 由于传递返回值列表时机不定,所以得手动在其后触发
+		bindArgNodeSlot(self, fieldName, nodeSlot)
+		bindReturnValue(self, fieldName, value)用于绑定返回值结果
+		NodeSlot用于在结点未绑定返回值的情况下,被其它结点用于绑定参数
+		linkNodeField(self, fieldName, nextNode)用于绑定不同的分支流程
+
+		initLocalArgs()主要用于函数,方便函数体内逻辑获取参数的实参
+		传参两种：传值、传引
+				getLocalArgPointer()对应传引用
+
+		calculate()定义逻辑计算主体
+
+
+ValueNode
+		setValue()将数据绑定到返回值
+		getValue()数值类的逻辑主体 读取返回值并返回
+		一般简单的数值类逻辑主体比较简单 直接放在getValue()里实现
+OperateNode
+		为啥逻辑主体在 calculate里？ 为了便于理解
+		实际上 getValue()里触发run()而间接触发calculate
+
+CalculateNode 作为逻辑类的基类
+		初始化参数包含了 参数列表、返回值列表、句柄列表
+		并其数据采用了对象保存列表数据，而不是一般类的方式
+		其重写覆盖了基类的参数列表、返回值列表、句柄列表的相关接口
+
+
+Composite 函数
+		实例名对应关键字
+		内部包含开始结点、结束结点
+CheckOperate.txt
