@@ -12,7 +12,7 @@ from urllib3 import disable_warnings
 disable_warnings()
 import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
-#http://vip8.3sybf.com/20230220/6PvSCFNx/700kb/hls/index.m3u8	output\9148713.mp4
+#http://vip8.3sybf.com/20230220/6PvSCFNx/700kb/hls/index.m3u8   output\9148713.mp4
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.82 Safari/537.36"
 }
@@ -258,6 +258,8 @@ def main(*args):
             ts_name = filename.uri.rsplit("/", 1)[1]
         else:
             ts_name = filename.uri
+        if ts_name.find("?") != -1:
+                ts_name = ts_name.split("?", 1)[0]
         ts_name_list.append(ts_name)
         if not os.path.exists(os.path.join(down_path,fixLongFileName(ts_name))):
             unload_ts_info_list.append([filename.uri,ts_name])
@@ -270,7 +272,7 @@ def main(*args):
         for i in range(unload_ts_num):
             obj = executor.submit(download,unload_ts_info_list[i],prefix_url,web_ip_url,decrypt,down_path,key)
             obj_list.append(obj)
-		#查看线程池是否结束
+        #查看线程池是否结束
         ts_count = 0
         for future in as_completed(obj_list):
             ts_count = ts_count + 1
