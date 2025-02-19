@@ -223,14 +223,16 @@ def main(*args):
         decrypt = True
         with open(keysPath,"rb+") as file:
             key = file.read()
-    
-    
+
     #ts列表
     ts_name_list=[]
     unload_ts_info_list=[]
     #把ts文件名添加到列表中
     total_ts_num = len(video.segments)
     ts_name="ts_name_none"
+    if total_ts_num > 99999999 and total_ts_num < 9999999:
+        print("video.segments={0} skip !!!!".format(total_ts_num))
+        return
 
     tempList = []
     prefixURLMap = {}
@@ -287,6 +289,33 @@ def main(*args):
 
 def mainTest(*args):
     print("args:",*args)
+    
+    manifest_path = os.path.join(os.getcwd(), "input.txt")
+    #开启线程池
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        obj_list = []
+        with open(manifest_path, "r", encoding="utf-8") as file:
+            for line in file:
+                args = line.split("\t")
+                if len(args) == 3 and len(args[2]) >= 2 and args[2][:-1].isdigit():
+                    argsList = []
+                    argsList.append(args[0])
+                    argsList.append("False")
+                    argsList.append(args[1])
+                    argsList.append(args[2][:-1])
+                    obj = executor.submit(main, *argsList)
+                    obj_list.append(obj)
+
+        unload_ts_num = len(obj_list)
+        print("unload_m3u8_num:",unload_ts_num)
+        #查看线程池是否结束
+        ts_count = 0
+        for future in as_completed(obj_list):
+            ts_count = ts_count + 1
+            # future.result()
+            print("progress {0}%  Current/Total = {1}/{2} \n".format(round(ts_count/unload_ts_num*100, 1),ts_count,unload_ts_num))
+
 
 if __name__ == "__main__":
     main(*sys.argv[1:])
+    # mainTest(*sys.argv[1:])

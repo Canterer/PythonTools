@@ -16,7 +16,12 @@ from selenium.webdriver.support import expected_conditions as EC
 import concurrent.futures
 from concurrent.futures import as_completed
 
+Global_Web_Op_Wait_Time = 150
+Global_Web_M3U8_Wait_Time = 300
+Global_Driver_Num = 10
+
 Global_Web_Dynamic_Url = ""
+Global_Web_Tab_Str = "/shipin/"
 
 class VideoInfo:
 	def __init__(self, href, title):
@@ -54,7 +59,7 @@ def parserVideo(options, service, video_info_list, manifest_path):
 	content = ""
 	content_line_count = 0 
 	failed_video_info_list = []#记录文件中 搜索失败的视频信息
-	manifest_path_temp = manifest_path+"_temp"
+	manifest_path_temp = manifest_path.replace(".txt", "_cache.txt")
 	# 通过记录文件 查找已搜索成功的视频信息
 	if os.path.exists(manifest_path):
 		with open(manifest_path, "r", encoding="utf-8") as file:
@@ -125,7 +130,7 @@ def parserVideo(options, service, video_info_list, manifest_path):
 
 
 	
-		driver_num = 10
+		driver_num = Global_Driver_Num
 		driver_list = []
 		driver_path = "./geckodriver.exe"
 		driver_path = os.path.join(os.getcwd(), driver_path)
@@ -137,7 +142,7 @@ def parserVideo(options, service, video_info_list, manifest_path):
 			options = Options()
 			options.binary_location = binary_location
 			options.profile = profile
-			# options.add_argument('-headless')
+			options.add_argument('-headless')
 			service = Service(executable_path=driver_path)
 			driver = webdriver.Firefox(options=options, service = service)
 			# driver_auth(driver)
@@ -196,8 +201,8 @@ def parserVideo(options, service, video_info_list, manifest_path):
 		for i, video_info in enumerate(wait_video_info_list):
 			file.write(video_info.GetRecordStr())
 
-	if os.path.exists(manifest_path_temp):
-		os.remove(manifest_path_temp)
+	# if os.path.exists(manifest_path_temp):
+		# os.remove(manifest_path_temp)
 
 def req_video_info(driver, driver_index, video_index, video_info):
 	play_url = video_info.GetPlayUrl()
@@ -205,7 +210,7 @@ def req_video_info(driver, driver_index, video_index, video_info):
 	m3u8_url = ""
 	try:
 		driver.get(play_url)
-		wait = WebDriverWait(driver, 600)
+		wait = WebDriverWait(driver, Global_Web_M3U8_Wait_Time)
 		wait.until(EC.presence_of_element_located((By.TAG_NAME, "iframe")))
 		# print("source_code:",driver.page_source)
 		iframe = driver.find_element(By.TAG_NAME, "iframe")
@@ -254,7 +259,7 @@ def get_video_m3u8(index, video_info, max_retries):
 				video_info.UpdateUrl(media.absolute_uri)
 				break
 			else:
-				print("error: main m3u8 playlists length > 1, playlists:", main_m3u8.playlists)
+				print("error: main m3u8 playlists length > 1, playlists:{0} \nmain m3u8:{1}".format(main_m3u8.playlists, video_info.main_m3u8_url))
 				break
 		except Exception as e:
 			print("load m3u8 failed !!! retries {0} url:{1}".format(retries, video_info.main_m3u8_url))
@@ -264,8 +269,8 @@ def driver_auth(driver):
 	web_url = "http://www.avtt421.com"
 	# 第一次请求 返回的是线路选择
 	driver.get(web_url)
-	wait = WebDriverWait(driver, 600)
-	time.sleep(2)
+	wait = WebDriverWait(driver, Global_Web_Op_Wait_Time)
+	time.sleep(3)
 	# print("source_code",driver.page_source)
 	#divs = driver.find_elements(By.TAG_NAME, "div")
 	tag_a_list = driver.find_elements(By.TAG_NAME, "a")
@@ -294,7 +299,7 @@ def driver_auth(driver):
 		# 尝试直接请求 返回的是认证页面
 		driver.get(web_url)
 		# time.sleep(15)
-		wait = WebDriverWait(driver, 600)
+		wait = WebDriverWait(driver, Global_Web_Op_Wait_Time)
 	# print("source_code:",driver.page_source)
 	# wait.until(EC.presence_of_element_located((By.CLASS_NAME, "myButton")))
 
@@ -319,7 +324,8 @@ def main(*args):
 	print("cwd:",os.getcwd())
 	# url = args[0]#"https://index.m3u8"
 	# url = "https://baidu.com"
-	tab_url = "/shipin4/avjieshuo/"
+
+	tab_url = Global_Web_Tab_Str
 	pageBegin = 1	# 从第几页开始读取
 	pageCount = 1	# 读取多少页的数据
 
@@ -330,6 +336,7 @@ def main(*args):
 	auto_max_page_flag = True # 是否自动扫描到最后一页
 	print("driver_path:", driver_path)
 	print("binary_location:", binary_location)
+	print("tab_str:", tab_url)
 
 	cacheFileName = tab_url.replace("/","_")
 
@@ -339,8 +346,7 @@ def main(*args):
 	options = Options()
 	options.binary_location = binary_location
 	options.profile = profile
-	# options.headless = True
-	# options.add_argument('-headless')
+	options.add_argument('-headless')
 
 	service = Service(executable_path=driver_path)
 
@@ -349,7 +355,7 @@ def main(*args):
 
 	
 	# 等待界面加载首页
-	# wait = WebDriverWait(driver, 600)
+	# wait = WebDriverWait(driver, Global_Web_Op_Wait_Time)
 	# wait.until(EC.presence_of_element_located((By.CLASS_NAME, "menu")))
 
 	# print("current_url:",driver.current_url)
@@ -396,7 +402,7 @@ def main(*args):
 	target_link_href = Global_Web_Dynamic_Url+tab_url+"list_{0}.html".format(pageBegin)
 	driver.get(target_link_href)
 
-	wait = WebDriverWait(driver, 150)
+	wait = WebDriverWait(driver, Global_Web_Op_Wait_Time)
 
 
 	wait_window_time = 20
@@ -429,7 +435,7 @@ def main(*args):
 		if next_page_href != None:
 			print("next_page:",next_page_href)
 			driver.get(next_page_href)
-			wait = WebDriverWait(driver, 150)
+			wait = WebDriverWait(driver, Global_Web_Op_Wait_Time)
 			wait.until(EC.presence_of_element_located((By.CLASS_NAME, "menu")))
 		time.sleep(2)
 		links = driver.find_elements(By.TAG_NAME, 'a')
@@ -464,7 +470,7 @@ def main(*args):
 	print("sleep!!!")
 
 
-	time.sleep(180)
+	time.sleep(60)
 	driver.quit()
 
 def mainTest(*args):
