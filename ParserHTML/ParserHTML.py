@@ -19,6 +19,10 @@ from concurrent.futures import as_completed
 Global_Web_Op_Wait_Time = 150
 Global_Web_M3U8_Wait_Time = 300
 Global_Driver_Num = 10
+Global_Web_Black_list = [
+	"ng.alubax.com",
+	"kh.bahbou.com"#仅UC游览器
+]
 
 Global_Web_Dynamic_Url = ""
 Global_Web_Tab_Str = "/shipin/"
@@ -96,8 +100,10 @@ def parserVideo(options, service, video_info_list, manifest_path):
 			print("file line count:{0}".format(content_line_count))
 
 
-
-	wait_video_info_list = []
+	main_m3u8_content = ""
+	all_video_info_list = []#待请求m3u8的列表
+	wait_video_info_list = []#待请求main_m3u8的列表
+	remove_main_url_map = {}
 	if os.path.exists(manifest_path_temp):
 		# 中间备份过数据
 		with open(manifest_path_temp, "r", encoding="utf-8") as file:
@@ -117,19 +123,21 @@ def parserVideo(options, service, video_info_list, manifest_path):
 						print("parse index:{0} href:{1} title:<{2}>".format(count/2, href, title))
 						video_info = VideoInfo(href, title)
 						video_info.UpdateMainUrl(secondLine[:-1])
-						wait_video_info_list.append(video_info)
+						remove_main_url_map[href] = True
+						all_video_info_list.append(video_info)
+						main_m3u8_content = main_m3u8_content + firstLine + secondLine
 					else:
 						print("parser video info error!!! in line:{0} content:{1}".format(count, firstLine))
 
-	else:
-		for i, video_info in enumerate(video_info_list):
-			if video_info.href not in remove_url_map:
+
+	for i, video_info in enumerate(video_info_list):
+		if video_info.href not in remove_url_map:
+			if video_info.href not in remove_main_url_map:
 				wait_video_info_list.append(video_info)
-		wait_video_info_list.extend(failed_video_info_list)# 追加之前失败的视频信息
-		wait_video_info_num = len(wait_video_info_list)
+	wait_video_info_list.extend(failed_video_info_list)# 追加之前失败的视频信息
+	wait_video_info_num = len(wait_video_info_list)
 
-
-	
+	if wait_video_info_num > 0:
 		driver_num = Global_Driver_Num
 		driver_list = []
 		driver_path = "./geckodriver.exe"
@@ -155,6 +163,8 @@ def parserVideo(options, service, video_info_list, manifest_path):
 			# begin = time.time()#记录线程开始时间
 			count = 0
 			wait_flag = True
+			cache_index = 300
+			cache_size = cache_index
 			while( wait_flag ):
 				print("driver progress:{0}/{1}".format(count,wait_video_info_num))
 				obj_list = obj_cache_list
@@ -182,27 +192,243 @@ def parserVideo(options, service, video_info_list, manifest_path):
 							count += 1
 							wait_flag = True
 				
+				if len(wait_video_info_list) >= cache_index:
+					cache_index = cache_index + cache_size
+					# 中间结果备份
+					with open(manifest_path_temp,"w", encoding="utf-8") as file:
+						file.write(main_m3u8_content)
+						for i, video_info in enumerate(wait_video_info_list):
+							file.write(video_info.GetTempRecordStr())
+
 				#查看线程池是否结束
 
 		for i, driver in enumerate(driver_list):
 			driver.quit()
 		driver_list = []
 
-		# 中间结果备份
+		# 更新结果备份
 		with open(manifest_path_temp,"w", encoding="utf-8") as file:
-			file.write(content)
+			file.write(main_m3u8_content)
 			for i, video_info in enumerate(wait_video_info_list):
 				file.write(video_info.GetTempRecordStr())
+				all_video_info_list.append(video_info)
 
 
-	wait_video_info_list = concurrent_m3u8(wait_video_info_list)
+	update_video_info_list = concurrent_m3u8(all_video_info_list)
 	with open(manifest_path,"w", encoding="utf-8") as file:
 		file.write(content)
-		for i, video_info in enumerate(wait_video_info_list):
+		for i, video_info in enumerate(update_video_info_list):
 			file.write(video_info.GetRecordStr())
 
 	# if os.path.exists(manifest_path_temp):
 		# os.remove(manifest_path_temp)
+
+def cache_func_test(data_list, isFinished):
+	print("cache_func_test")
+	# # 中间结果备份
+	# with open(manifest_path_temp,"w", encoding="utf-8") as file:
+	# 	file.write(main_m3u8_content)
+	# 	for i, video_info in enumerate(wait_video_info_list):
+	# 		file.write(video_info.GetTempRecordStr())
+
+def task_pop_func_test(driver_index, result):
+	print("task_pop_func_test")
+	# driver_index, video_index, video_info = future.result()
+	# print("driver_index {0} completed video_index:{1} main_m3u8_url:{2}".format(driver_index, video_index, video_info.main_m3u8_url))
+def task_push_func_test(driver_index, data_index, data):
+	print("task_push_func_test")
+	# print("executor.submit driver_index {0} count:{1} href:{2}".format(driver_index, count, wait_video_info_list[count].href))
+def task_run_func_test(driver, driver_index, data_index, data):
+	print("task_run_func_test")
+
+def concurrent_driver_func(driver_num,data_num,data_list,cache_step,cache_func,task_pop_func,task_push_func,task_run_func):
+	# driver_num = Global_Driver_Num
+	driver_list = []
+	driver_path = "./geckodriver.exe"
+	driver_path = os.path.join(os.getcwd(), driver_path)
+	binary_location = "C:/Program Files/Mozilla Firefox/firefox.exe"
+	for i in range(driver_num):
+		print("try new driver index:",i)
+		profile = FirefoxProfile()
+		profile.set_preference("permissions.default.image", 2)#禁止加载图片
+		options = Options()
+		options.binary_location = binary_location
+		options.profile = profile
+		options.add_argument('-headless')
+		service = Service(executable_path=driver_path)
+		driver = webdriver.Firefox(options=options, service = service)
+		# driver_auth(driver)
+		driver_list.append(driver)
+	print("open driver num:",driver_num)
+	#开启线程池
+	with concurrent.futures.ThreadPoolExecutor() as executor:
+		obj_list = []
+		obj_cache_list = []
+		# begin = time.time()#记录线程开始时间
+		count = 0
+		wait_flag = True
+		cache_index = 300
+		cache_size = cache_index
+		while( wait_flag ):
+			print("driver progress:{0}/{1}".format(count, data_num))
+			obj_list = obj_cache_list
+			obj_cache_list = []
+			if len(obj_list) > 0:
+				wait_flag = False
+				for future in as_completed(obj_list):#每drive
+					task_pop_func(driver_index, future.result)
+					# driver_index, video_index, video_info = future.result()
+					# print("driver_index {0} completed video_index:{1} main_m3u8_url:{2}".format(driver_index, video_index, video_info.main_m3u8_url))
+					if count < data_num:
+						task_push_func(driver_index, count, data_list[count])
+						# print("executor.submit driver_index {0} count:{1} href:{2}".format(driver_index, count, wait_video_info_list[count].href))
+						obj = executor.submit(task_run_func, driver_list[driver_index], driver_index, count, data_list[count])
+						obj_cache_list.append(obj)
+						count += 1
+						wait_flag = True
+			else:
+				# 仅第一次会运行至此
+				for index in range(driver_num):
+					driver = driver_list[index]
+					driver_auth(driver)
+					if count < data_num:
+						task_push_func(driver_index, count, data_list[count])						
+						# print("executor.submit driver_index {0} count:{1} href:{2}".format(index, count, wait_video_info_list[count].href))
+						obj = executor.submit(task_run_func, driver_list[index], index, count, data_list[count])
+						obj_cache_list.append(obj)
+						count += 1
+						wait_flag = True
+			
+			if len(wait_video_info_list) >= cache_index:
+				cache_index = cache_index + cache_size
+				cache_func(wait_video_info_list, False)
+				# # 中间结果备份
+				# with open(manifest_path_temp,"w", encoding="utf-8") as file:
+				# 	file.write(main_m3u8_content)
+				# 	for i, video_info in enumerate(wait_video_info_list):
+				# 		file.write(video_info.GetTempRecordStr())
+
+			#查看线程池是否结束
+
+	for i, driver in enumerate(driver_list):
+		driver.quit()
+	driver_list = []
+
+	cache_func(wait_video_info_list, True)
+	# # 更新结果备份
+	# with open(manifest_path_temp,"w", encoding="utf-8") as file:
+	# 	file.write(main_m3u8_content)
+	# 	for i, video_info in enumerate(wait_video_info_list):
+	# 		file.write(video_info.GetTempRecordStr())
+	# 		all_video_info_list.append(video_info)
+
+
+
+def concurrent_page(data_list, urlCacheFile, tab_url):
+	data_num = len(data_list)
+	driver_num = Global_Driver_Num
+	driver_list = []
+	driver_path = "./geckodriver.exe"
+	driver_path = os.path.join(os.getcwd(), driver_path)
+	binary_location = "C:/Program Files/Mozilla Firefox/firefox.exe"
+	for i in range(driver_num):
+		print("try new driver index:",i)
+		profile = FirefoxProfile()
+		profile.set_preference("permissions.default.image", 2)#禁止加载图片
+		options = Options()
+		options.binary_location = binary_location
+		options.profile = profile
+		options.add_argument('-headless')
+		service = Service(executable_path=driver_path)
+		driver = webdriver.Firefox(options=options, service = service)
+		# driver_auth(driver)
+		driver_list.append(driver)
+	print("open driver num:",driver_num)
+	result_list = []
+	#开启线程池
+	with concurrent.futures.ThreadPoolExecutor() as executor:
+		obj_list = []
+		obj_cache_list = []
+		# begin = time.time()#记录线程开始时间
+		count = 0
+		wait_flag = True
+		cache_index = 300
+		cache_size = cache_index
+		while( wait_flag ):
+			print("driver progress:{0}/{1}".format(count, data_num))
+			obj_list = obj_cache_list
+			obj_cache_list = []
+			if len(obj_list) > 0:
+				wait_flag = False
+				for future in as_completed(obj_list):#每drive
+					# task_pop_func(driver_index, future.result)
+					driver_index, page_index, video_info_list = future.result()
+					result_list.extend(video_info_list)
+					print("driver_index {0} completed page_index:{1} video_list len:{2}".format(driver_index, page_index, len(video_info_list)))
+					if count < data_num:
+						# task_push_func(driver_index, count, data_list[count])
+						print("executor.submit driver_index {0} count:{1} data:{2}".format(driver_index, count, data_list[count]))
+						obj = executor.submit(req_page_info, driver_list[driver_index], driver_index, count, data_list[count], tab_url)
+						obj_cache_list.append(obj)
+						count += 1
+						wait_flag = True
+			else:
+				# 仅第一次会运行至此
+				for driver_index in range(driver_num):
+					driver = driver_list[driver_index]
+					driver_auth(driver)
+					if count < data_num:
+						# task_push_func(driver_index, count, data_list[count])						
+						print("executor.submit driver_index {0} count:{1} data:{2}".format(driver_index, count, data_list[count]))
+						obj = executor.submit(req_page_info, driver_list[driver_index], driver_index, count, data_list[count], tab_url)
+						obj_cache_list.append(obj)
+						count += 1
+						wait_flag = True
+			
+			if count >= cache_index:
+				cache_index = cache_index + cache_size
+				print("update cache count:",count)
+				# cache_func(wait_video_info_list, False)
+				# # 中间结果备份
+				with open(urlCacheFile,"w", encoding="utf-8") as file:
+					for i, video_info in enumerate(result_list):
+						file.write("{0}\t\t<{1}>\n".format(video_info.href, video_info.title))
+
+			#查看线程池是否结束
+
+	for i, driver in enumerate(driver_list):
+		driver.quit()
+	driver_list = []
+
+	with open(urlCacheFile,"w", encoding="utf-8") as file:
+		for i, video_info in enumerate(result_list):
+			file.write("{0}\t\t<{1}>\n".format(video_info.href, video_info.title))
+
+
+
+
+def req_page_info(driver, driver_index, page_index, page_url, tab_url):
+	print("driver_index:{0} page_index:{1} page_url:{2}".format(driver_index, page_index, page_url))
+	video_info_list = []
+	try:
+		driver.get(page_url)
+		wait = WebDriverWait(driver, Global_Web_Op_Wait_Time)
+		wait.until(EC.presence_of_element_located((By.CLASS_NAME, "menu")))
+		time.sleep(2)
+		links = driver.find_elements(By.TAG_NAME, 'a')
+		for link in links:
+			href = link.get_attribute('href')
+			#print("find link<{0}>: {1}".format(link.text,href))
+			if len(href) > len(tab_url) and href.find(tab_url) >= 0:
+				# print("find link<{0}>: {1}".format(link.text,href))
+				splitList = href.split("/")
+				filename = splitList[-1].split(".")[0]
+				if filename.isdigit():
+					title = link.text.replace("\n","")
+					video_info_list.append(VideoInfo(href, title))
+	except Exception as e:
+		print("req page {0} failed !!! url:{1}".format(page_index,page_url))
+	return (driver_index, page_index, video_info_list)
 
 def req_video_info(driver, driver_index, video_index, video_info):
 	play_url = video_info.GetPlayUrl()
@@ -247,6 +473,10 @@ def get_video_m3u8(index, video_info, max_retries):
 	if video_info.main_m3u8_url == "":
 		print("get_video_m3u8 failed !!! main_m3u8_url is empty string ! href:", video_info.href)
 		return (index, video_info)
+	for limit in Global_Web_Black_list:
+		if video_info.main_m3u8_url.find(limit) > 0:
+			print("get_video_m3u8 failed !!! limit web:{0} main_m3u8_url:{1} href:{2}".format(limit, video_info.main_m3u8_url, video_info.href))
+			return (index, video_info)
 	retries = 0
 	while retries < max_retries:
 		retries += 1
@@ -255,7 +485,7 @@ def get_video_m3u8(index, video_info, max_retries):
 			if len(main_m3u8.playlists) == 1:
 				media = main_m3u8.playlists[0]
 				# print("media:{0} stream_info:{1} absolute_uri:{2}".format(media,media.stream_info,media.absolute_uri))
-				print("video m3u8:", media.absolute_uri)
+				print("find video m3u8:", media.absolute_uri)
 				video_info.UpdateUrl(media.absolute_uri)
 				break
 			else:
@@ -328,12 +558,12 @@ def main(*args):
 	tab_url = Global_Web_Tab_Str
 	pageBegin = 1	# 从第几页开始读取
 	pageCount = 1	# 读取多少页的数据
+	auto_max_page_flag = True # 是否自动扫描到最后一页
 
 	# driver_path = "E:/WorkSpaces/PythonSpaces/PythonTools/ParserHTML/geckodriver.exe"
 	driver_path = "./geckodriver.exe"
 	driver_path = os.path.join(os.getcwd(), driver_path)
 	binary_location = "C:/Program Files/Mozilla Firefox/firefox.exe"
-	auto_max_page_flag = True # 是否自动扫描到最后一页
 	print("driver_path:", driver_path)
 	print("binary_location:", binary_location)
 	print("tab_str:", tab_url)
@@ -427,7 +657,7 @@ def main(*args):
 	# print("source_code:",driver.page_source)
 
 	next_page_href = None
-	max_page = pageBegin + pageCount
+	max_page = pageBegin + pageCount - 1
 	count = 0
 	while count < pageCount:
 	#for i in range(pageCount):
@@ -445,7 +675,7 @@ def main(*args):
 				next_page_href = href
 			#print("find link<{0}>: {1}".format(link.text,href))
 			if len(href) > len(tab_url) and href.find(tab_url) >= 0:
-				print("find link<{0}>: {1}".format(link.text,href))
+				# print("find link<{0}>: {1}".format(link.text,href))
 				splitList = href.split("/")
 				filename = splitList[-1].split(".")[0]
 				if filename.isdigit():
@@ -457,21 +687,32 @@ def main(*args):
 						if page_index > max_page:
 							max_page = page_index
 							print("update max_page:",max_page)
-		if auto_max_page_flag and max_page != pageBegin + pageCount:
-			pageCount = max_page - pageBegin
+		if auto_max_page_flag and max_page != pageBegin + pageCount -1:
+			pageCount = max_page - pageBegin + 1
 			print("auto change pageCount:",pageCount)
+			break
+		if not auto_max_page_flag:
+			break
 
+	driver.quit()
 
-	with open(urlCacheFile,"w+", encoding="utf-8") as file:
-		for i, video_info in enumerate(video_info_list):
-			file.write("{0}\t\t<{1}>\n".format(video_info.href, video_info.title))
+	data_list = []
+	for page_index in range(pageBegin,max_page+1,1):
+		page_url = Global_Web_Dynamic_Url+tab_url+"list_{0}.html".format(page_index)
+		print("page_url:",page_url)
+		data_list.append(page_url)
+
+	concurrent_page(data_list, urlCacheFile, tab_url)
+
+	# with open(urlCacheFile,"w+", encoding="utf-8") as file:
+	# 	for i, video_info in enumerate(video_info_list):
+	# 		file.write("{0}\t\t<{1}>\n".format(video_info.href, video_info.title))
 	
 	# parserVideo(options, service, video_info_list, cacheFileName+"manifest.txt")
 	print("sleep!!!")
 
 
 	time.sleep(60)
-	driver.quit()
 
 def mainTest(*args):
 	print("args:",*args)
