@@ -183,6 +183,14 @@ def main(*args):
     if not os.path.exists(down_path):
         os.mkdir(down_path)
 
+    if os.path.exists(down_path+"/_output.bat") :
+        print("Save outFile: ",out_file_name)
+        with open(down_path+"/_output.bat", 'w') as fw:
+            content = "cd ../../"
+            content += "E:\Softs\Python38\python.exe LoadM3U8.py {0} False {1} {2}".format(url,out_file_name,sub_folder_index)
+            print("bat content:",content)
+            fw.write(content)
+
     m3u8Path = down_path+"/_index.m3u8"
     if not os.path.exists(m3u8Path):
         print("get m3u8=",url)
