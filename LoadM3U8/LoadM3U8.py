@@ -18,6 +18,7 @@ headers = {
 }
 timeout = ()
 bForceHttp = False
+bForceUpdateBat = True
 
 #防止ts名字过长
 def fixLongFileName(filename):
@@ -183,7 +184,7 @@ def main(*args):
     if not os.path.exists(down_path):
         os.mkdir(down_path)
 
-    if os.path.exists(down_path+"/_output.bat") :
+    if bForceUpdateBat or not os.path.exists(down_path+"/_output.bat") :
         print("Save outFile: ",out_file_name)
         with open(down_path+"/_output.bat", 'w') as fw:
             content = "cd ../../"
